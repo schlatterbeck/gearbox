@@ -211,20 +211,20 @@ class Gearbox :
         >>> print ("%.5f" % gb.zone_factor (5 * pi / 180))
         2.48675
         >>> print ("%.5f" % gb.zone_factor (10 * pi / 180))
-        2.46331
+        2.46337
         >>> print ("%.5f" % gb.zone_factor (15 * pi / 180))
-        2.42443
+        2.42473
         >>> print ("%.5f" % gb.zone_factor (25 * pi / 180))
-        2.30154
+        2.30385
         >>> print ("%.5f" % gb.zone_factor (35 * pi / 180))
-        2.14
+        2.13072
         >>> print ("%.5f" % gb.zone_factor (40 * pi / 180))
-        2.04
+        2.02782
         """
         if beta is None :
             beta = self.beta
-        beta_b  = atan (tan (beta) * cos (alpha))
         alpha_t = atan (tan (alpha) / cos (beta))
+        beta_b  = atan (tan (beta) * cos (alpha_t))
         return 1 / cos (alpha_t) * sqrt (2 * cos (beta_b) / tan (alpha_t))
     # end def zone_factor
 

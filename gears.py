@@ -145,7 +145,7 @@ class Gears (pga.PGA, autosuper) :
         # Stahl: Index into table "werkstoffe" above
         minmax.extend ([(0, len (self.werkstoffe))] * 4)
         # Schrägungswinkel
-        minmax.append ((0, 20))
+        minmax.append ((8, 20))
         # Eintauchfaktor Rad1 x_1
         minmax.append ((2, 5))
         d = dict \
@@ -197,11 +197,84 @@ class Gears (pga.PGA, autosuper) :
         # Leistung P
         P = 50e3
         # Durchmesser/Breitenverhältnis
+        # Modul/Breitenverhältnis TB 21-13b small-> easier; FIXABLE TB
+        phi_m = 20
         # Stirnmodul Rad 1, Rad 2
         stirnmodul   = []
         normalmodul  = []
         n_r          = self.args.numerator
         Z_E          = 189.8
+
+        ### max:
+
+        normalmodul = m_n
+
+        
+        # Zahnbreite
+        b = phi_m * m_n
+        # check breite
+        phi_d = b/D_R # = phi_dlim
+
+        # check umfangs v
+        v = D_Ritzel * n_ein * pi
+        v <= 10
+            if beta == 0
+            else 15
+        
+        class shaft_bearing #daraus resultierend phi_dlim (aufhängung/lager)
+            symetrical      #O--X--O
+                normal-annealed     <= 1.6
+                tempered            <= 1.4
+                case_hardened       <= 1.1
+                nitrified           <= 0.8
+            asymetrical     #O-X---O
+                normal-annealed     <= 1.3
+                tempered            <= 1.1
+                case_hardened       <= 0.9
+                nitrified           <= 0.6
+            flying          #O---O-X
+                normal-annealed     <= 0.8
+                tempered            <= 0.7
+                case_hardened       <= 0.6
+                nitrified           <= 0.4
+
+        
+        # m_n Normalmodul 
+        
+        # d_RW gibt maximalen durchmesser Ritzelwelle
+        d_RW= m_n*(z_R-2.5)/1.1*cos(beta)
+        # d_W gibt maximalen Durchmesser Welle mit aufgestecktem Ritzel
+        d_W= m_n*(z_R-2.5)/1.8*cos(beta)
+        
+        # Kopfkreisdurchmesser
+        D_KRad = D_Rad + 2 * m_n
+        # Profilüberdeckung
+        epsilon_alpha= (0.5
+                        * (sqrt(D_KRitzel**2 - D_bRitzel**2)
+                        + sqrt(D_KRad**2 - D_bRad**2))
+                        - a * sin(alpha_t))
+                        / pi * m_t * cos(alpha_t)
+        # Normal-Profilüberdeckung zwischen [1.1,1.25]
+        epsilon_alphan = epsilon_alpha/cos(beta)**2
+        # Sprungüberdeckung (nur für Schrägvz) >1
+        epsilon_beta = b_Rad * sin(beta) / pi * m_n
+
+    ### Öltauchschmierung hier tatsächlich wichtig beide Großräder zu beschreiben
+        # Eintauchtiefe
+        t_1= x * m_n
+        # Ölniveau
+        t_oil = D_KRad / 2 - t
+        # Eintauchtiefe Rad2
+        t2 = D_KRad2 FIXME / 2 - t
+        # Eintauchfaktor Rad2
+        x2 = t2/m_n2 FIXME #zw 2-10 * m_n2
+
+    ### GRENZWERTE
+        
+
+        
+        ###
+        
         for i in range (2) :
             stahl      = werks [i]
             delta_Hlim = stahl.delta_h_lim

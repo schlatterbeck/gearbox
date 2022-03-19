@@ -12,7 +12,6 @@ import sys
 def inv_involute_slow (x) :
     x3 = x  ** (1/3)
     x8 = x3 ** 8
-    x5 = x  ** (8/5)
     k3 = 3  ** (1/3)
     return acos \
         ( np.sin (atan (k3 * x3 + 3/5 * x + (1/11 * x8)))
@@ -69,29 +68,33 @@ def inv_involute_apsol5 (x) :
 
 inv_involute = inv_involute_apsol4
 
-def plot_error (inv_version) :
+def plot_error (inv_version, absolute = False) :
     x = np.arange (0, 37.6, 0.03)
     y = []
     for a in x :
         b = a / 180 * np.pi
         invol = np.tan (b) - b
-        y.append (inv_version (invol) - inv_involute_slow (invol))
+        sl = inv_involute_slow (invol)
+        if absolute :
+            y.append (inv_version (invol) - sl)
+        else :
+            y.append ((inv_version (invol) - sl) / sl)
     fig = plt.figure ()
     ax  = fig.add_subplot (1, 1, 1)
     ax.plot (x, y)
     plt.show ()
 # end def plot_error
 
-def plot_error_apsol4 () :
-    plot_error (inv_involute_apsol4)
+def plot_error_apsol4 (absolute) :
+    plot_error (inv_involute_apsol4, absolute)
 # end def plot_error_apsol4
 
-def plot_error_apsol5 () :
-    plot_error (inv_involute_apsol5)
+def plot_error_apsol5 (absolute) :
+    plot_error (inv_involute_apsol5, absolute)
 # end def plot_error_apsol5
 
-def plot_error_lookup () :
-    plot_error (inv_involute_lookup)
+def plot_error_lookup (absolute) :
+    plot_error (inv_involute_lookup, absolute)
 # end def plot_error_lookup
 
 class Material :
@@ -554,6 +557,11 @@ class Gear_Optimizer (pga.PGA, autosuper) :
 if __name__ == '__main__' :
     cmd = ArgumentParser ()
     cmd.add_argument \
+        ( '--absolute-error'
+        , help    = "When plotting errors, use absolute error"
+        , action  = 'store_true'
+        )
+    cmd.add_argument \
         ( '-c', '--check'
         , help    = "A comma-separated list of 4 integers for gears to check"
         )
@@ -582,28 +590,22 @@ if __name__ == '__main__' :
         , action  = 'store_true'
         )
     cmd.add_argument \
-        ( '--plot-error-0'
-        , action  = 'store_true'
-        )
-    cmd.add_argument \
-        ( '--plot-error-4'
-        , action  = 'store_true'
-        )
-    cmd.add_argument \
-        ( '--plot-error-5'
-        , action  = 'store_true'
+        ( '--plot-error'
+        , type    = int
+        , default = 1
         )
     cmd.add_argument \
         ( '-r', '--random-seed'
         , type    = int
         )
     args = cmd.parse_args ()
-    if args.plot_error_0 :
-        plot_error_lookup ()
-    elif args.plot_error_4 :
-        plot_error_apsol4 ()
-    elif args.plot_error_5 :
-        plot_error_apsol5 ()
+    if args.plot_error :
+        if args.plot_error == 1 :
+            plot_error_lookup (absolute = args.absolute_error)
+        elif args.plot_error == 4 :
+            plot_error_apsol4 (absolute = args.absolute_error)
+        elif args.plot_error == 5 :
+            plot_error_apsol5 (absolute = args.absolute_error)
     elif args.plot_zone_factor :
         m  = Material ('S235JR', Material.HB, 'normal_annealed'
                       , 120, 120, 125, 190, 315, 430, 1)

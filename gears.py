@@ -1,9 +1,11 @@
 #!/usr/bin/python3
 
 import numpy as np
+import matplotlib.pyplot as plt
 from rsclib.autosuper import autosuper
 from argparse import ArgumentParser
 from math import gcd, sqrt, pi, sin, cos, tan, atan
+from bisect import bisect_right
 import pga
 import sys
 
@@ -104,6 +106,12 @@ class Material :
 # end class Material
 
 class Gearbox :
+    istep = 1000
+    # istep would be inaccessible in list comprehension scope, use hack
+    def involution_table (istep) :
+        maxangle = 80 / 180 * pi
+        return [tan (x) - x for x in np.arange (0, maxangle, 1/istep)]
+    involution_table = involution_table (istep)
 
     def __init__ (self, materials, z, beta, n_ein) :
         self.materials = materials
@@ -198,35 +206,85 @@ class Gearbox :
         ### x2 = t2 / m_n2 FIXME #zw 2-10 * m_n2
     # end def __init__
 
-    def zone_factor (self, beta = None, alpha = pi * 20 / 180) :
-        """ Zone factor Z_H. This is normally tabulated because it seems
-            hard to give a closed formula if the "Profilverschiebungsfaktor" 
-            is != 0, i.e. (x1 + x2) != 0. So the currently-implemented
-            method can only deal with (x1 + x2) == 0
+    def zone_factor \
+        (self, tidx = 0, beta = None, shift = None, alpha = pi * 20 / 180) :
+        """ Zone factor Z_H. This typically gets the transmission index
+            and computes all the other values from it.
+            This is normally tabulated because it seems hard to give a
+            closed formula if the profile shift is != 0, i.e. (x1 + x2)
+            != 0. So the currently-implemented method can only deal with
+            (x1 + x2) == 0
         >>> m  = Material ('S235JR', 'normal_annealed'
         ...               , 120, 120, 125, 190, 315, 430, 1)
         >>> gb = Gearbox ([m] * 4, [30] * 4, 15, 1)
-        >>> print ("%.5f" % gb.zone_factor (0))
+        >>> print ("%.5f" % gb.zone_factor (beta = 0, shift = 0))
         2.49457
-        >>> print ("%.5f" % gb.zone_factor (5 * pi / 180))
+        >>> print ("%.5f" % gb.zone_factor (beta = 5 * pi / 180, shift = 0))
         2.48675
-        >>> print ("%.5f" % gb.zone_factor (10 * pi / 180))
+        >>> print ("%.5f" % gb.zone_factor (beta = 10 * pi / 180, shift = 0))
         2.46337
-        >>> print ("%.5f" % gb.zone_factor (15 * pi / 180))
+        >>> print ("%.5f" % gb.zone_factor (beta = 15 * pi / 180, shift = 0))
         2.42473
-        >>> print ("%.5f" % gb.zone_factor (25 * pi / 180))
+        >>> print ("%.5f" % gb.zone_factor (beta = 25 * pi / 180, shift = 0))
         2.30385
-        >>> print ("%.5f" % gb.zone_factor (35 * pi / 180))
+        >>> print ("%.5f" % gb.zone_factor (beta = 35 * pi / 180, shift = 0))
         2.13072
-        >>> print ("%.5f" % gb.zone_factor (40 * pi / 180))
+        >>> print ("%.5f" % gb.zone_factor (beta = 40 * pi / 180, shift = 0))
         2.02782
+        >>> print ("%.5f" % gb.zone_factor (beta = 30 * pi / 180, shift = -0.02))
+        2.66981
+        >>> print ("%.5f" % gb.zone_factor (beta = 30 * pi / 180, shift = 0.1))
+        1.70126
         """
+        # FIXME: beta and shift should be looked up the the tidx for
+        # each transmission
         if beta is None :
             beta = self.beta
+        if shift is None :
+            shift = self.shift
         alpha_t = atan (tan (alpha) / cos (beta))
         beta_b  = atan (tan (beta) * cos (alpha_t))
-        return 1 / cos (alpha_t) * sqrt (2 * cos (beta_b) / tan (alpha_t))
+        if shift == 0 :
+            alpha_tw = alpha_t
+        else :
+            # Perform linear interpolation of involution_table to
+            # reverse tan(x) - x to x
+            inv_alpha_tw = tan (alpha_t) - alpha_t + 2 * tan (alpha) * shift
+            idx = bisect_right (self.involution_table, inv_alpha_tw)
+            assert 0 < idx <= len (self.involution_table)
+            idx -= 1
+            if self.involution_table [idx] < inv_alpha_tw :
+                assert idx + 1 < len (self.involution_table)
+                inv_l = self.involution_table [idx]
+                inv_r = self.involution_table [idx + 1]
+                x1 = idx / self.istep
+                x2 = (idx + 1) / self.istep
+                factor = (inv_alpha_tw - inv_l) / (inv_r - inv_l)
+                alpha_tw = x1 + (x2 - x1) * factor
+        return 1 / cos (alpha_t) * sqrt (2 * cos (beta_b) / tan (alpha_tw))
     # end def zone_factor
+
+    def plot_zone_factor (self) :
+        shifts = ( .1, .09, .08, .07, .06, .05, .04, .03, .025, .02, .015
+                 , .01, .005, 0.0, -.005, -.01, -.015, -.02
+                 )
+        x   = np.arange (0, 45, .01)
+        fig = plt.figure ()
+        ax  = fig.add_subplot (1, 1, 1)
+        ax.set_ylim ((1.5, 3.0))
+        ax.grid (True)
+        x_ticks = np.arange (0, 46, 5)
+        y_ticks = np.arange (1.5, 3.05, 0.1)
+        ax.set_xticks (x_ticks)
+        ax.set_yticks (y_ticks)
+        for shift in shifts :
+            y = []
+            for b in x :
+                br = b / 180 * pi
+                y.append (self.zone_factor (beta = br, shift = shift))
+            ax.plot (x, y)
+        plt.show ()
+    # end def plot_zone_factor
 
 # end class Gearbox
 
@@ -409,14 +467,24 @@ if __name__ == '__main__' :
         , default = 3510
         )
     cmd.add_argument \
+        ( '-p', '--plot-zone-factor'
+        , action  = 'store_true'
+        )
+    cmd.add_argument \
         ( '-r', '--random-seed'
         , type    = int
         )
     args = cmd.parse_args ()
-    go = Gear_Optimizer (args)
-    if args.check :
-        z = [int (i) for i in args.check.split (',')]
+    if args.plot_zone_factor :
+        m  = Material ('S235JR', 'normal_annealed'
+                      , 120, 120, 125, 190, 315, 430, 1)
+        gb = Gearbox ([m] * 4, [30] * 4, 15, 1)
+        gb.plot_zone_factor ()
+    elif args.check :
+        go = Gear_Optimizer (args)
+        z  = [int (i) for i in args.check.split (',')]
         print ("Factor: %f" % go.factor)
         print ("Gear Error: %12.9f%%" % go.err (*z))
     else :
+        go = Gear_Optimizer (args)
         go.run ()

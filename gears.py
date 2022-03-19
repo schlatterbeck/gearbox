@@ -4,10 +4,95 @@ import numpy as np
 import matplotlib.pyplot as plt
 from rsclib.autosuper import autosuper
 from argparse import ArgumentParser
-from math import gcd, atan
+from math import gcd, atan, acos
 from bisect import bisect_right
 import pga
 import sys
+
+def inv_involute_slow (x) :
+    x3 = x  ** (1/3)
+    x8 = x3 ** 8
+    x5 = x  ** (8/5)
+    k3 = 3  ** (1/3)
+    return acos \
+        ( np.sin (atan (k3 * x3 + 3/5 * x + (1/11 * x8)))
+        / (x + atan (k3 * x3 + 3/5 * x + 1/11 * x8))
+        )
+# end def inv_involute_slow
+
+# Pre-computations for involute lookup version
+istep = 1000
+maxangle = 46 / 180 * np.pi
+involute_table = [np.tan (x) - x for x in np.arange (0, maxangle, 1/istep)]
+
+def inv_involute_lookup (x) :
+    """ Perform linear interpolation of involute_table to
+        reverse tan(x) - x to x
+    """
+    idx = bisect_right (involute_table, x)
+    assert 0 < idx <= len (involute_table)
+    idx -= 1
+    if involute_table [idx] < x :
+        assert idx + 1 < len (involute_table)
+        inv_l = involute_table [idx]
+        inv_r = involute_table [idx + 1]
+        x1 = idx / istep
+        x2 = (idx + 1) / istep
+        factor = (x - inv_l) / (inv_r - inv_l)
+        return x1 + (x2 - x1) * factor
+    else :
+        assert involute_table [idx] == x
+        return idx / istep
+# def inv_involute_lookup
+
+def inv_involute_apsol4 (x) :
+    """ This is "Apsol4" from Alberto López Rosado, Federico Prieto
+        Muñoz, and Roberto Alvarez Fernández. An analytic expression for
+        the inverse involute. Mathematical Problems in Engineering,
+        2019(3586012), September 2019.
+        Note that this is accurate only to about 37°.
+    """
+    x3 = x ** (1/3)
+    return x3 / (0.69336473 + (-0.0000654976 + 0.1926063 * x3) * x3)
+# end def inv_involute_apsol4
+
+def inv_involute_apsol5 (x) :
+    """ This is "Apsol5" from Alberto López Rosado, Federico Prieto
+        Muñoz, and Roberto Alvarez Fernández. An analytic expression for
+        the inverse involute. Mathematical Problems in Engineering,
+        2019(3586012), September 2019.
+        Note that this is accurate only to about 37°.
+    """
+    x3 = x ** (1/3)
+    return x3 / (0.693357 + 0.192848 * x3 * x3)
+# end def inv_involute_apsol5
+
+inv_involute = inv_involute_apsol4
+
+def plot_error (inv_version) :
+    x = np.arange (0, 37.6, 0.03)
+    y = []
+    for a in x :
+        b = a / 180 * np.pi
+        invol = np.tan (b) - b
+        y.append (inv_version (invol) - inv_involute_slow (invol))
+    fig = plt.figure ()
+    ax  = fig.add_subplot (1, 1, 1)
+    ax.plot (x, y)
+    plt.show ()
+# end def plot_error
+
+def plot_error_apsol4 () :
+    plot_error (inv_involute_apsol4)
+# end def plot_error_apsol4
+
+def plot_error_apsol5 () :
+    plot_error (inv_involute_apsol5)
+# end def plot_error_apsol5
+
+def plot_error_lookup () :
+    plot_error (inv_involute_lookup)
+# end def plot_error_lookup
 
 class Material :
     # Einheit Härtegrad
@@ -107,12 +192,6 @@ class Material :
 # end class Material
 
 class Gear :
-    istep = 1000
-    # istep would be inaccessible in list comprehension scope, use hack
-    def involution_table (istep) :
-        maxangle = 80 / 180 * np.pi
-        return [np.tan (x) - x for x in np.arange (0, maxangle, 1/istep)]
-    involution_table = involution_table (istep)
 
     # Constants (for this project at least):
     alpha = np.pi * 20 / 180
@@ -175,10 +254,8 @@ class Gear :
     def zone_factor (self, beta = None, shift = None) :
         """ Zone factor Z_H. This typically gets the transmission index
             and computes all the other values from it.
-            This is normally tabulated because it seems hard to give a
-            closed formula if the profile shift is != 0, i.e. (x1 + x2)
-            != 0. So the currently-implemented method can only deal with
-            (x1 + x2) == 0
+            Note that we use a efficient method for computing the
+            inverse of the involute. The largest angle we use is 37.43°
         >>> m  = Material ('S235JR', Material.HB, 'normal_annealed'
         ...               , 120, 120, 125, 190, 315, 430, 1)
         >>> g  = Gear ((m, m), (30, 30), 15, 1)
@@ -211,21 +288,9 @@ class Gear :
         if shift == 0 :
             alpha_tw = alpha_t
         else :
-            # Perform linear interpolation of involution_table to
-            # reverse tan(x) - x to x
             inv_alpha_tw = \
                 np.tan (alpha_t) - alpha_t + 2 * np.tan (self.alpha) * shift
-            idx = bisect_right (self.involution_table, inv_alpha_tw)
-            assert 0 < idx <= len (self.involution_table)
-            idx -= 1
-            if self.involution_table [idx] < inv_alpha_tw :
-                assert idx + 1 < len (self.involution_table)
-                inv_l = self.involution_table [idx]
-                inv_r = self.involution_table [idx + 1]
-                x1 = idx / self.istep
-                x2 = (idx + 1) / self.istep
-                factor = (inv_alpha_tw - inv_l) / (inv_r - inv_l)
-                alpha_tw = x1 + (x2 - x1) * factor
+            alpha_tw = inv_involute (inv_alpha_tw)
         return \
             ( (1 / np.cos (alpha_t))
             * np.sqrt (2 * np.cos (beta_b) / np.tan (alpha_tw))
@@ -517,11 +582,29 @@ if __name__ == '__main__' :
         , action  = 'store_true'
         )
     cmd.add_argument \
+        ( '--plot-error-0'
+        , action  = 'store_true'
+        )
+    cmd.add_argument \
+        ( '--plot-error-4'
+        , action  = 'store_true'
+        )
+    cmd.add_argument \
+        ( '--plot-error-5'
+        , action  = 'store_true'
+        )
+    cmd.add_argument \
         ( '-r', '--random-seed'
         , type    = int
         )
     args = cmd.parse_args ()
-    if args.plot_zone_factor :
+    if args.plot_error_0 :
+        plot_error_lookup ()
+    elif args.plot_error_4 :
+        plot_error_apsol4 ()
+    elif args.plot_error_5 :
+        plot_error_apsol5 ()
+    elif args.plot_zone_factor :
         m  = Material ('S235JR', Material.HB, 'normal_annealed'
                       , 120, 120, 125, 190, 315, 430, 1)
         g = Gear ([m, m], [30, 30], 15, 1)

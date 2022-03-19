@@ -4,52 +4,53 @@ import numpy as np
 import matplotlib.pyplot as plt
 from rsclib.autosuper import autosuper
 from argparse import ArgumentParser
-from math import gcd, sqrt, pi, sin, cos, tan, atan
+from math import gcd, atan
 from bisect import bisect_right
 import pga
 import sys
 
 class Material :
     # Einheit Härtegrad
-    # FIXME: Should this become one of NORMAL_ANNEALED, TEMPERED, etc
-    #        (see below)?
+    # FIXME: HRCN should be removed, this is now done with the
+    # material_type (see below)
     HB   = 0
     HRC  = 1
     HRCN = 2
 
-    # Resulting phi_dlim from shaft bearing (Aufhängung / Lager)
+    # Resulting psi_dlim from shaft bearing (Aufhängung / Lager)
     # symetrical   O--X--O
-    phi_dlim_symmetrical = dict \
+    psi_dlim_symmetrical = dict \
         ( normal_annealed = 1.6
         , tempered        = 1.4
         , case_hardened   = 1.1
         , nitrified       = 0.8
         )
     # asymetrical  O-X---O
-    phi_dlim_asymetrical = dict \
+    psi_dlim_asymetrical = dict \
         ( normal_annealed = 1.3
         , tempered        = 1.1
         , case_hardened   = 0.9
         , nitrified       = 0.6
         )
     # flying       O---O-X
-    phi_dlim_flying = dict \
+    psi_dlim_flying = dict \
         ( normal_annealed = 0.8
         , tempered        = 0.7
         , case_hardened   = 0.6
         , nitrified       = 0.4
         )
-    material_types = set (k for k in phi_dlim_flying)
+    material_types = set (k for k in psi_dlim_flying)
 
     dlim_by_bearing = dict \
-        ( symmetrical   = phi_dlim_symmetrical
-        , asymmetrical  = phi_dlim_asymetrical
-        , flying        = phi_dlim_flying
+        ( symmetrical   = psi_dlim_symmetrical
+        , asymmetrical  = psi_dlim_asymetrical
+        , flying        = psi_dlim_flying
         )
 
     def __init__ \
         ( self
         , name
+        , unit
         , material_type
         , hardness_min,    hardness_max
         , delta_f_lim_min, delta_f_lim_max
@@ -58,7 +59,7 @@ class Material :
         ) :
         self.name               = name
         self.material_type      = material_type
-        #self.unit               = unit
+        self.unit               = unit
         self.hardness_min       = hardness_min
         self.hardness_max       = hardness_max
         self.delta_f_lim_min    = delta_f_lim_min
@@ -96,160 +97,124 @@ class Material :
         return 0.5
     # end def psi_d
 
-    def phi_dlim (self, shaft_bearing) :
-        """ Compute *minimum* phi_d from given shaft bearing
+    def psi_dlim (self, shaft_bearing) :
+        """ Compute *maximum* psi_d from given shaft bearing
             and the parameter of the material
         """
         return self.dlim_by_bearing [shaft_bearing][self.material_type]
-    # end phi_dlim
+    # end psi_dlim
 
 # end class Material
 
-class Gearbox :
+class Gear :
     istep = 1000
     # istep would be inaccessible in list comprehension scope, use hack
     def involution_table (istep) :
-        maxangle = 80 / 180 * pi
-        return [tan (x) - x for x in np.arange (0, maxangle, 1/istep)]
+        maxangle = 80 / 180 * np.pi
+        return [np.tan (x) - x for x in np.arange (0, maxangle, 1/istep)]
     involution_table = involution_table (istep)
+
+    # Constants (for this project at least):
+    alpha = np.pi * 20 / 180
+    # Anwendungsfaktor K_A
+    K_A = 1.5
+    # Profilverschiebung (profile shift)
+    profile_shift = [0, 0]
+
+    # FIXME
+    # A note on modul: This is a european way to describe this, the
+    # american version uses Diametral Pitch which is the reciprocal.
+    # See https://de.wikipedia.org/wiki/Modul_(Zahnrad)
+    modul_table_DIN_780_I = \
+        [ 0.0, 1.1, 2.2
+        ]
+    modul_table_DIN_780_II = \
+        [ 0.0, 1.1, 2.2
+        ]
 
     def __init__ (self, materials, z, beta, n_ein) :
         self.materials = materials
         self.z         = z
         self.beta      = beta
-        self.n_ein     = n_ein
-        assert len (z) == 4
-        assert len (materials) == 4
-        self.fac        = (z [0] * z [2]) / (z [1] * z [3])
-        # Anwendungsfaktor K_A
-        self.K_A = 1.5
-        # Eingangsdrehzahl n_ein
-        self.n_ein = n_ein
+        assert len (z) == 2
+        assert len (materials) == 2
         # Leistung P
-        self.P = 50e3
-        # Durchmesser/Breitenverhältnis
-        # Modul/Breitenverhältnis TB 21-13b small-> easier; FIXABLE TB
-        self.phi_m = 20
+        self.P   = 50e3
+        self.Z_E = 189.8
+        n_r      = n_ein
         # Stirnmodul Rad 1, Rad 2
-        self.stirnmodul   = []
-        # FIXME: see n_ein same value?
-        ### self.n_r          = self.args.numerator
-        n_r = n_ein # FIXME ?????
-        self.Z_E          = 189.8
-        for i in range (2) :
-            stahl      = self.materials [i]
-            delta_Hlim = stahl.delta_h_lim
-            ### FIXME: phi_dlim ???
-            ###psi_d      = stahl.psi_d
+        self.stirnmodul = []
+        for m in materials :
+            delta_Hlim = m.delta_h_lim
+            ### FIXME: psi_dlim ???
+            ###psi_d      = m.psi_d
             psi_d = 1 # FIXME
-            u_tat      = z [2*i+1] / z [2*i]
+            u_tat      = z [1] / z [0]
             # Betriebsmoment Welle
-            T_ges = self.P * self.K_A / (2 * n_r * pi)
+            T_ges = self.P * self.K_A / (2 * n_r * np.pi)
             Z_H2  = 1 # FIXME
-            m = sqrt \
+            sm = np.sqrt \
                 ( (2 * T_ges * 1.2) / ((delta_Hlim / 1.4) ** 2)
                 * (u_tat + 1) / u_tat
                 * (self.Z_E ** 2) * (Z_H2 ** 2)
-                * 1 / (psi_d * z [2*i] ** 3)
+                * 1 / (psi_d * z [0] ** 3)
                 )
-            self.stirnmodul.append (m)
+            self.stirnmodul.append (sm)
             n_r = n_r * z [1] / z [0]
         self.stirnmodul  = np.array (self.stirnmodul)
-        self.normalmodul = self.stirnmodul * cos (beta)
-
-        ### max:
-
-        ### normalmodul = m_n
-
-
-        # Zahnbreite
-        ### b = phi_m * m_n
-        # check breite
-        ### phi_d = b / D_R # = phi_dlim
-
-        # check umfangs v
-        ### v = D_Ritzel * n_ein * pi
-        ### v <= 10
-        ###     if beta == 0
-        ###     else 15
-
-        # m_n Normalmodul
-
-        # d_RW gibt maximalen durchmesser Ritzelwelle
-        ### d_RW = m_n * (z_R - 2.5) / (1.1 * cos (beta))
-        # d_W gibt maximalen Durchmesser Welle mit aufgestecktem Ritzel
-        ### d_W  = m_n * (z_R - 2.5) / (1.8 * cos (beta))
-
-        # Kopfkreisdurchmesser
-        ### D_KRad = D_Rad + 2 * m_n
-        # Profilüberdeckung
-        ### epsilon_alpha = (  0.5
-        ###                 * sqrt (D_KRitzel ** 2 - D_bRitzel ** 2)
-        ###                 + sqrt (D_KRad ** 2 - D_bRad ** 2)
-        ###                 - a * sin (alpha_t)
-        ###                 / pi * m_t * cos (alpha_t)
-        ###                 )
-        # Normal-Profilüberdeckung zwischen [1.1,1.25]
-        ### epsilon_alphan = epsilon_alpha / cos (beta) ** 2
-        # Sprungüberdeckung (nur für Schrägvz) >1
-        ### epsilon_beta = b_Rad * sin (beta) / pi * m_n
-
-    ### Öltauchschmierung hier tatsächlich wichtig beide Großräder zu
-    ### beschreiben
-        # Eintauchtiefe
-        ### t_1 = x * m_n
-        # Ölniveau
-        ### t_oil = D_KRad / 2 - t
-        # Eintauchtiefe Rad2
-        ### t2 = D_KRad2 FIXME / 2 - t
-        # Eintauchfaktor Rad2
-        ### x2 = t2 / m_n2 FIXME #zw 2-10 * m_n2
+        self.normalmodul = self.stirnmodul * np.cos (beta)
     # end def __init__
 
-    def zone_factor \
-        (self, tidx = 0, beta = None, shift = None, alpha = pi * 20 / 180) :
+    @property
+    def profile_shift_normalized (self) :
+        """ This is the term (x1 + x2) / (z1 + z2) in computation of Z_H
+        """
+        return sum (self.profile_shift) / sum (self.z)
+    # end def profile_shift_normalized
+
+    def zone_factor (self, beta = None, shift = None) :
         """ Zone factor Z_H. This typically gets the transmission index
             and computes all the other values from it.
             This is normally tabulated because it seems hard to give a
             closed formula if the profile shift is != 0, i.e. (x1 + x2)
             != 0. So the currently-implemented method can only deal with
             (x1 + x2) == 0
-        >>> m  = Material ('S235JR', 'normal_annealed'
+        >>> m  = Material ('S235JR', Material.HB, 'normal_annealed'
         ...               , 120, 120, 125, 190, 315, 430, 1)
-        >>> gb = Gearbox ([m] * 4, [30] * 4, 15, 1)
-        >>> print ("%.5f" % gb.zone_factor (beta = 0, shift = 0))
+        >>> g  = Gear ((m, m), (30, 30), 15, 1)
+        >>> zf = g.zone_factor
+        >>> print ("%.5f" % zf (beta = 0, shift = 0))
         2.49457
-        >>> print ("%.5f" % gb.zone_factor (beta = 5 * pi / 180, shift = 0))
+        >>> print ("%.5f" % zf (beta = 5 * np.pi / 180, shift = 0))
         2.48675
-        >>> print ("%.5f" % gb.zone_factor (beta = 10 * pi / 180, shift = 0))
+        >>> print ("%.5f" % zf (beta = 10 * np.pi / 180, shift = 0))
         2.46337
-        >>> print ("%.5f" % gb.zone_factor (beta = 15 * pi / 180, shift = 0))
+        >>> print ("%.5f" % zf (beta = 15 * np.pi / 180, shift = 0))
         2.42473
-        >>> print ("%.5f" % gb.zone_factor (beta = 25 * pi / 180, shift = 0))
+        >>> print ("%.5f" % zf (beta = 25 * np.pi / 180, shift = 0))
         2.30385
-        >>> print ("%.5f" % gb.zone_factor (beta = 35 * pi / 180, shift = 0))
+        >>> print ("%.5f" % zf (beta = 35 * np.pi / 180, shift = 0))
         2.13072
-        >>> print ("%.5f" % gb.zone_factor (beta = 40 * pi / 180, shift = 0))
+        >>> print ("%.5f" % zf (beta = 40 * np.pi / 180, shift = 0))
         2.02782
-        >>> print ("%.5f" % gb.zone_factor (beta = 30 * pi / 180, shift = -0.02))
+        >>> print ("%.5f" % zf (beta = 30 * np.pi / 180, shift = -0.02))
         2.66981
-        >>> print ("%.5f" % gb.zone_factor (beta = 30 * pi / 180, shift = 0.1))
+        >>> print ("%.5f" % zf (beta = 30 * np.pi / 180, shift = 0.1))
         1.70126
         """
-        # FIXME: beta and shift should be looked up the the tidx for
-        # each transmission
         if beta is None :
             beta = self.beta
         if shift is None :
-            shift = self.shift
-        alpha_t = atan (tan (alpha) / cos (beta))
-        beta_b  = atan (tan (beta) * cos (alpha_t))
+            shift = self.profile_shift_normalized
+        alpha_t = atan (np.tan (self.alpha) / np.cos (beta))
+        beta_b  = atan (np.tan (beta) * np.cos (alpha_t))
         if shift == 0 :
             alpha_tw = alpha_t
         else :
             # Perform linear interpolation of involution_table to
             # reverse tan(x) - x to x
-            inv_alpha_tw = tan (alpha_t) - alpha_t + 2 * tan (alpha) * shift
+            inv_alpha_tw = \
+                np.tan (alpha_t) - alpha_t + 2 * np.tan (self.alpha) * shift
             idx = bisect_right (self.involution_table, inv_alpha_tw)
             assert 0 < idx <= len (self.involution_table)
             idx -= 1
@@ -261,7 +226,10 @@ class Gearbox :
                 x2 = (idx + 1) / self.istep
                 factor = (inv_alpha_tw - inv_l) / (inv_r - inv_l)
                 alpha_tw = x1 + (x2 - x1) * factor
-        return 1 / cos (alpha_t) * sqrt (2 * cos (beta_b) / tan (alpha_tw))
+        return \
+            ( (1 / np.cos (alpha_t))
+            * np.sqrt (2 * np.cos (beta_b) / np.tan (alpha_tw))
+            )
     # end def zone_factor
 
     def plot_zone_factor (self) :
@@ -280,11 +248,87 @@ class Gearbox :
         for shift in shifts :
             y = []
             for b in x :
-                br = b / 180 * pi
+                br = b / 180 * np.pi
                 y.append (self.zone_factor (beta = br, shift = shift))
             ax.plot (x, y)
         plt.show ()
     # end def plot_zone_factor
+
+# end class Gear
+
+class Gearbox :
+    def __init__ (self, materials, z, beta, n_ein) :
+        assert len (z) == 4
+        assert len (materials) == 4
+        # FIXME: the two gears get different parameters (beta, n_ein)
+        self.gears = \
+            [ Gear (materials [:2], z [:2], beta, n_ein)
+            , Gear (materials [2:], z [2:], beta, n_ein)
+            ]
+        self.fac = (z [0] * z [2]) / (z [1] * z [3])
+        # FIXME: The following probably should be moved to the Gear class
+        #        And we probably want the different computations in
+        #        different methods of that class -- with separate tests
+        # FIXME: We probably want to rename variables for english terms
+        #        e.g. n_ein -> n_in (?) etc. or even longer names, e.g.
+        #        instead of n_in we might use rotary_speed
+        # Eingangsdrehzahl n_ein
+        self.n_ein = n_ein
+        # Durchmesser/Breitenverhältnis
+        # Modul/Breitenverhältnis TB 21-13b small-> easier; FIXABLE TB
+        self.phi_m = 20
+        # FIXME: see n_ein same value?
+        ### self.n_r          = self.args.numerator
+        n_r = n_ein # FIXME ?????
+
+        ### max:
+
+        ### normalmodul = m_n
+
+
+        # Zahnbreite
+        ### b = phi_m * m_n
+        # check breite
+        ### psi_d = b / D_R # = psi_dlim
+
+        # check umfangs v
+        ### v = D_Ritzel * n_ein * np.pi
+        ### v <= 10
+        ###     if beta == 0
+        ###     else 15
+
+        # m_n Normalmodul
+
+        # d_RW gibt maximalen durchmesser Ritzelwelle
+        ### d_RW = m_n * (z_R - 2.5) / (1.1 * np.cos (beta))
+        # d_W gibt maximalen Durchmesser Welle mit aufgestecktem Ritzel
+        ### d_W  = m_n * (z_R - 2.5) / (1.8 * np.cos (beta))
+
+        # Kopfkreisdurchmesser
+        ### D_KRad = D_Rad + 2 * m_n
+        # Profilüberdeckung
+        ### epsilon_alpha = (  0.5
+        ###                 * np.sqrt (D_KRitzel ** 2 - D_bRitzel ** 2)
+        ###                 + np.sqrt (D_KRad ** 2 - D_bRad ** 2)
+        ###                 - a * np.sin (alpha_t)
+        ###                 / np.pi * m_t * np.cos (alpha_t)
+        ###                 )
+        # Normal-Profilüberdeckung zwischen [1.1,1.25]
+        ### epsilon_alphan = epsilon_alpha / np.cos (beta) ** 2
+        # Sprungüberdeckung (nur für Schrägvz) >1
+        ### epsilon_beta = b_Rad * np.sin (beta) / np.pi * m_n
+
+    ### Öltauchschmierung hier tatsächlich wichtig beide Großräder zu
+    ### beschreiben
+        # Eintauchtiefe
+        ### t_1 = x * m_n
+        # Ölniveau
+        ### t_oil = D_KRad / 2 - t
+        # Eintauchtiefe Rad2
+        ### t2 = D_KRad2 FIXME / 2 - t
+        # Eintauchfaktor Rad2
+        ### x2 = t2 / m_n2 FIXME #zw 2-10 * m_n2
+    # end def __init__
 
 # end class Gearbox
 
@@ -293,76 +337,78 @@ class Gear_Optimizer (pga.PGA, autosuper) :
     """
     # Name, Härtegrad-Einheit Flankenhärte, Zahnfußdauerfestigkeit (min/max)
     # Zahnflankendauerfestigkeit (min/max), rel Material cost
-    # FIXME: The HB, HRC etc should probably be replaced with the
-    # material_type name above. This is a simple string.
+    # FIXME: The HRCN should probably be replaced with HRC and the
+    # material_type name above. The material_type is a simple string.
     HB   = Material.HB
     HRC  = Material.HRC
     HRCN = Material.HRCN
-#    materials = \
-#        ( Material ( 'S235JR'
-#                   ,  HB, 120, 120, 125, 190,  315,  430, 1
+    # FIXME: This is an example, nitrified below is almost certainly wrong
+    # All the other materials have to be fixed.
+    materials = \
+        ( Material ( 'S235JR', HB, 'nitrified'
+                   , 120, 120, 125, 190,  315,  430, 1
+                   )
+#        , Material ( 'E295', HB,
+#                   , 160, 160, 140, 210,  350,  485, 1.1
 #                   )
-#        , Material ( 'E295'
-#                   ,  HB, 160, 160, 140, 210,  350,  485, 1.1
+#        , Material ( 'E335', HB,
+#                   , 190, 190, 160, 225,  375,  540, 1.7
 #                   )
-#        , Material ( 'E335'
-#                   ,  HB, 190, 190, 160, 225,  375,  540, 1.7
+#        , Material ( 'C45E_N', HB,
+#                   , 190, 190, 160, 260,  470,  590, 1.7
 #                   )
-#        , Material ( 'C45E_N'
-#                   ,  HB, 190, 190, 160, 260,  470,  590, 1.7
+#        , Material ( 'QT34CrMo4', HB,
+#                   , 270, 270, 220, 335,  540,  800, 2.4
 #                   )
-#        , Material ( 'QT34CrMo4'
-#                   ,  HB, 270, 270, 220, 335,  540,  800, 2.4
+#        , Material ( 'QT42CrMo4', HB,
+#                   , 300, 300, 230, 335,  540,  800, 2.4
 #                   )
-#        , Material ( 'QT42CrMo4'
-#                   ,  HB, 300, 300, 230, 335,  540,  800, 2.4
+#        , Material ( 'QT34CrNiMo6', HB,
+#                   , 310, 310, 235, 345,  580,  840, 2.4
 #                   )
-#        , Material ( 'QT34CrNiMo6'
-#                   ,  HB, 310, 310, 235, 345,  580,  840, 2.4
+#        , Material ( 'QT30CrNiMo8', HB,
+#                   , 320, 320, 240, 355,  610,  870, 2.7
 #                   )
-#        , Material ( 'QT30CrNiMo8'
-#                   ,  HB, 320, 320, 240, 355,  610,  870, 2.7
+#        , Material ( 'QT36CrNiMo16', HB,
+#                   , 350, 350, 250, 365,  640,  915, 3
 #                   )
-#        , Material ( 'QT36CrNiMo16'
-#                   ,  HB, 350, 350, 250, 365,  640,  915, 3
+#        , Material ( 'UH +FH CrMo TB20-1(Nr.19-22)', HRC
+#                   , 50,  50, 230, 380,  980, 1275, 5
 #                   )
-#        , Material ( 'UH +FH CrMo TB20-1(Nr.19-22)'
-#                   , HRC, 50,  50, 230, 380,  980, 1275, 5
+#        , Material ( 'UH -FH CrMo TB20-1(Nr.19-22)', HRC
+#                   , 50,  50, 150, 230,  980, 1275, 4
 #                   )
-#        , Material ( 'UH -FH CrMo TB20-1(Nr.19-22)'
-#                   , HRC, 50,  50, 150, 230,  980, 1275, 4
+#        , Material ( 'EH +FH CrMo TB20-1(Nr.19-22)', HRC
+#                   , 56,  56, 270, 410, 1060, 1330, 7
 #                   )
-#        , Material ( 'EH +FH CrMo TB20-1(Nr.19-22)'
-#                   , HRC, 56,  56, 270, 410, 1060, 1330, 7
+#        , Material ( 'EH -FH CrMo TB20-1(Nr.19-22)', HRC
+#                   , 56,  56, 150, 230, 1060, 1330, 6
 #                   )
-#        , Material ( 'EH -FH CrMo TB20-1(Nr.19-22)'
-#                   , HRC, 56,  56, 150, 230, 1060, 1330, 6
+#        , Material ( 'QT42CrMo4N', HRC
+#                   , 48,  57, 260, 430,  780, 1215, 4
 #                   )
-#        , Material ( 'QT42CrMo4N'
-#                   , HRC, 48,  57, 260, 430,  780, 1215, 4
+#        , Material ( 'QT16MnCr5N', HRC
+#                   , 48,  57, 260, 430,  780, 1215, 4
 #                   )
-#        , Material ( 'QT16MnCr5N'
-#                   , HRC, 48,  57, 260, 430,  780, 1215, 4
+#        , Material ( 'C45E_NN', HRCN
+#                   , 30,  45, 225, 290,  650,  780, 3
 #                   )
-#        , Material ( 'C45E_NN'
-#                   , HRCN, 30,  45, 225, 290,  650,  780, 3
+#        , Material ( '16MnCr5N', HRCN
+#                   , 45,  57, 225, 385,  650,  950, 3.5
 #                   )
-#        , Material ( '16MnCr5N'
-#                   , HRCN, 45,  57, 225, 385,  650,  950, 3.5
+#        , Material ( 'QT34Cr4CN', HRCN
+#                   , 55,  60, 300, 450, 1100, 1350, 5.5
 #                   )
-#        , Material ( 'QT34Cr4CN'
-#                   , HRCN, 55,  60, 300, 450, 1100, 1350, 5.5
+#        , Material ( '16MnCr5EGm20', HRCN
+#                   , 58,  62, 310, 525, 1300, 1650, 9
 #                   )
-#        , Material ( '16MnCr5EGm20'
-#                   , HRCN, 58,  62, 310, 525, 1300, 1650, 9
+#        , Material ( '15CrNi6EGm16', HRCN
+#                   , 58,  62, 310, 525, 1300, 1650, 10
 #                   )
-#        , Material ( '15CrNi6EGm16'
-#                   , HRCN, 58,  62, 310, 525, 1300, 1650, 10
+#        , Material ( '18CrNiMo7-6EGm16', HRCN
+#                   , 58,  62, 310, 525, 1300, 1650, 11
 #                   )
-#        , Material ( '18CrNiMo7-6EGm16'
-#                   , HRCN, 58,  62, 310, 525, 1300, 1650, 11
-#                   )
-#        )
+        )
 
     def __init__ (self, args) :
         self.args   = args
@@ -476,10 +522,10 @@ if __name__ == '__main__' :
         )
     args = cmd.parse_args ()
     if args.plot_zone_factor :
-        m  = Material ('S235JR', 'normal_annealed'
+        m  = Material ('S235JR', Material.HB, 'normal_annealed'
                       , 120, 120, 125, 190, 315, 430, 1)
-        gb = Gearbox ([m] * 4, [30] * 4, 15, 1)
-        gb.plot_zone_factor ()
+        g = Gear ([m, m], [30, 30], 15, 1)
+        g.plot_zone_factor ()
     elif args.check :
         go = Gear_Optimizer (args)
         z  = [int (i) for i in args.check.split (',')]

@@ -9,7 +9,9 @@ from bisect import bisect_right
 import pga
 import sys
 
-def inv_involute_slow (x) :
+def inv_involute_liu (x) :
+    """ Corrected version by Liu cited by Rosado et. al.
+    """
     x3 = x  ** (1/3)
     x8 = x3 ** 8
     k3 = 3  ** (1/3)
@@ -17,7 +19,22 @@ def inv_involute_slow (x) :
         ( np.sin (atan (k3 * x3 + 3/5 * x + (1/11 * x8)))
         / (x + atan (k3 * x3 + 3/5 * x + 1/11 * x8))
         )
-# end def inv_involute_slow
+# end def inv_involute_liu
+
+def inv_involute_cheng (x) :
+    k3 = 3 ** (1/3)
+    return \
+        ( k3 * x ** (1/3)
+        - 2/5 * x
+        + 9/175 * k3 * k3 * x ** (5/3) 
+        - 2/175 * k3 * x ** (7/3)
+        - 144/67375 * x ** 3
+        + 3258/3128125 * k3 * k3 * x ** (11/3)
+        - 49711/153278125 * k3 * x ** (13/3)
+        - 1130112/9306171875 * x ** 5
+        + 5169659643/95304506171875 * k3 * k3 * x ** (17/3)
+        )
+# end def inv_involute_cheng
 
 # Pre-computations for involute lookup version
 istep = 1000
@@ -74,11 +91,11 @@ def plot_error (inv_version, absolute = False) :
     for a in x :
         b = a / 180 * np.pi
         invol = np.tan (b) - b
-        sl = inv_involute_slow (invol)
+        ref = inv_involute_cheng (invol)
         if absolute :
-            y.append (inv_version (invol) - sl)
+            y.append (inv_version (invol) - ref)
         else :
-            y.append ((inv_version (invol) - sl) / sl)
+            y.append ((inv_version (invol) - ref) / ref)
     fig = plt.figure ()
     ax  = fig.add_subplot (1, 1, 1)
     ax.plot (x, y)
@@ -96,6 +113,10 @@ def plot_error_apsol5 (absolute) :
 def plot_error_lookup (absolute) :
     plot_error (inv_involute_lookup, absolute)
 # end def plot_error_lookup
+
+def plot_error_liu (absolute) :
+    plot_error (inv_involute_liu, absolute)
+# end def plot_error_liu
 
 class Material :
     # Einheit Härtegrad
@@ -601,6 +622,8 @@ if __name__ == '__main__' :
     args = cmd.parse_args ()
     if args.plot_error :
         if args.plot_error == 1 :
+            plot_error_liu (absolute = args.absolute_error)
+        elif args.plot_error == 2 :
             plot_error_lookup (absolute = args.absolute_error)
         elif args.plot_error == 4 :
             plot_error_apsol4 (absolute = args.absolute_error)

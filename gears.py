@@ -12,11 +12,8 @@ import sys
 
 class Material :
     # Einheit Härtegrad
-    # FIXME: HRCN should be removed, this is now done with the
-    # material_type (see below)
     HB   = 0
     HRC  = 1
-    HRCN = 2
 
     # Resulting psi_dlim from shaft bearing (Aufhängung / Lager)
     # symetrical   O--X--O
@@ -54,8 +51,8 @@ class Material :
         , unit
         , material_type
         , hardness_min,    hardness_max
-        , delta_f_lim_min, delta_f_lim_max
-        , delta_h_lim_min, delta_h_lim_max
+        , sigma_f_lim_min, sigma_f_lim_max
+        , sigma_h_lim_min, sigma_h_lim_max
         , cost_factor
         ) :
         self.name               = name
@@ -63,10 +60,10 @@ class Material :
         self.unit               = unit
         self.hardness_min       = hardness_min
         self.hardness_max       = hardness_max
-        self.delta_f_lim_min    = delta_f_lim_min
-        self.delta_f_lim_max    = delta_f_lim_max
-        self.delta_h_lim_min    = delta_h_lim_min
-        self.delta_h_lim_max    = delta_h_lim_max
+        self.sigma_f_lim_min    = sigma_f_lim_min
+        self.sigma_f_lim_max    = sigma_f_lim_max
+        self.sigma_h_lim_min    = sigma_h_lim_min
+        self.sigma_h_lim_max    = sigma_h_lim_max
         self.cost_factor        = cost_factor
         # Material type must be known
         assert self.material_type in self.material_types
@@ -86,17 +83,6 @@ class Material :
     def delta_h_lim (self) :
         return (self.delta_h_lim_min + self.delta_h_lim_max) / 2
     # end def delta_h_lim
-
-    @property
-    def psi_d (self) :
-        if self.unit == self.HB :
-            if self.hardness < 180 :
-                return 1.2
-            return 1.0
-        elif self.unit == self.HRC :
-            return 0.8
-        return 0.5
-    # end def psi_d
 
     def psi_dlim (self, shaft_bearing) :
         """ Compute *maximum* psi_d from given shaft bearing
@@ -120,11 +106,16 @@ class Gear :
     # A note on modul: This is a european way to describe this, the
     # american version uses Diametral Pitch which is the reciprocal.
     # See https://de.wikipedia.org/wiki/Modul_(Zahnrad)
-    modul_table_DIN_780_I = \
-        [ 0.0, 1.1, 2.2
+    # TB 21-1
+    modul_DIN_780_I = \
+        [ 0.1, 0.12, 0.16, 0.20, 0.25, 0.3, 0.4, 0.5, 0.6,
+          0.7, 0.8, 0.9, 1, 1.25, 1.5, 2, 2.5, 3, 4, 5, 6,
+          7, 8, 10, 12, 16, 20, 25, 32, 40, 50, 60
         ]
-    modul_table_DIN_780_II = \
-        [ 0.0, 1.1, 2.2
+    modul_DIN_780_II = \
+        [ 0.11, 0.14, 0.18, 0.22, 0.28, 0.35, 0.45, 0.55,0.65, 0.75,
+          0.85, 0.95, 1.125, 1.375, 1.75, 2.25, 2.75, 3.5, 4.5, 5.5,
+          7, 9, 11, 14, 18, 22, 28, 36, 45, 55, 70
         ]
 
     def __init__ (self, materials, z, beta, n_ein) :
@@ -135,29 +126,44 @@ class Gear :
         assert len (materials) == 2
         # Leistung P
         self.P   = 50e3
+        #Z_E = FIXME
         self.Z_E = 189.8
-        n_r      = n_ein
-        # Stirnmodul Rad 1, Rad 2
-        self.stirnmodul = []
-        for m in materials :
+#        for i, (m, zahn) in enumerate (zip (materials, z)) :
             delta_Hlim = m.delta_h_lim
             ### FIXME: psi_dlim ???
+            m_t[FIXME] =
+            psi_d = 
             ###psi_d      = m.psi_d
             psi_d = 1 # FIXME
             u_tat      = z [1] / z [0]
             # Betriebsmoment Welle
             T_ges = self.P * self.K_A / (2 * n_r * np.pi)
             Z_H2  = 1 # FIXME
-            sm = np.sqrt \
-                ( (2 * T_ges * 1.2) / ((delta_Hlim / 1.4) ** 2)
-                * (u_tat + 1) / u_tat
-                * (self.Z_E ** 2) * (Z_H2 ** 2)
-                * 1 / (psi_d * z [0] ** 3)
-                )
-            self.stirnmodul.append (sm)
-            n_r = n_r * z [1] / z [0]
-        self.stirnmodul  = np.array (self.stirnmodul)
-        self.normalmodul = self.stirnmodul * np.cos (beta)
+        # Stirnmodul Rad 1, Rad 2
+        self.stirnmodul_calc = np.sqrt \
+            ( (2 * T_ges * 1.2) / ((delta_Hlim / 1.4) ** 2)
+            * (u_tat + 1) / u_tat
+            * (self.Z_E ** 2) * (Z_H2 ** 2)
+            * 1 / (psi_d * z [0] ** 3)
+            )
+        self.normalmodul_calc = self.stirnmodul_calc * np.cos (beta)
+        #lookup moduln
+        idx = bisect_right (self.modul_DIN_780_I, self.normalmodul_calc)
+        nm_I = modul_DIN_780_I [idx]
+        if nm_I < self.normalmodul_calc :
+            nm_I = modul_DIN_780_I [idx + 1]
+        nm_II = modul_DIN_780_II [idx]
+        if nm_II < self.normalmodul_calc :
+            nm_II = modul_DIN_780_II [idx + 1]     
+        self.stirnmodul = self.normalmodul / np.cos (beta)
+        if abs (nm_I - self.normalmodul_calc) < abs (nm_II - self.normalmodul_calc) :
+            nm_II = None
+        
+
+#        sm= 5.85409
+#        sm *cos beta
+#        sm_tabelle= 6
+#        sm_tab /cos beta
     # end def __init__
 
     @property
@@ -318,77 +324,74 @@ class Gear_Optimizer (pga.PGA, autosuper) :
     """
     # Name, Härtegrad-Einheit Flankenhärte, Zahnfußdauerfestigkeit (min/max)
     # Zahnflankendauerfestigkeit (min/max), rel Material cost
-    # FIXME: The HRCN should probably be replaced with HRC and the
-    # material_type name above. The material_type is a simple string.
+
     HB   = Material.HB
     HRC  = Material.HRC
-    HRCN = Material.HRCN
-    # FIXME: This is an example, nitrified below is almost certainly wrong
-    # All the other materials have to be fixed.
+
     materials = \
-        ( Material ( 'S235JR', HB, 'nitrified'
+        ( Material ( 'S235JR', HB, 'normal_annealed'
                    , 120, 120, 125, 190,  315,  430, 1
                    )
-#        , Material ( 'E295', HB,
-#                   , 160, 160, 140, 210,  350,  485, 1.1
-#                   )
-#        , Material ( 'E335', HB,
-#                   , 190, 190, 160, 225,  375,  540, 1.7
-#                   )
-#        , Material ( 'C45E_N', HB,
-#                   , 190, 190, 160, 260,  470,  590, 1.7
-#                   )
-#        , Material ( 'QT34CrMo4', HB,
-#                   , 270, 270, 220, 335,  540,  800, 2.4
-#                   )
-#        , Material ( 'QT42CrMo4', HB,
-#                   , 300, 300, 230, 335,  540,  800, 2.4
-#                   )
-#        , Material ( 'QT34CrNiMo6', HB,
-#                   , 310, 310, 235, 345,  580,  840, 2.4
-#                   )
-#        , Material ( 'QT30CrNiMo8', HB,
-#                   , 320, 320, 240, 355,  610,  870, 2.7
-#                   )
-#        , Material ( 'QT36CrNiMo16', HB,
-#                   , 350, 350, 250, 365,  640,  915, 3
-#                   )
-#        , Material ( 'UH +FH CrMo TB20-1(Nr.19-22)', HRC
-#                   , 50,  50, 230, 380,  980, 1275, 5
-#                   )
-#        , Material ( 'UH -FH CrMo TB20-1(Nr.19-22)', HRC
-#                   , 50,  50, 150, 230,  980, 1275, 4
-#                   )
-#        , Material ( 'EH +FH CrMo TB20-1(Nr.19-22)', HRC
-#                   , 56,  56, 270, 410, 1060, 1330, 7
-#                   )
-#        , Material ( 'EH -FH CrMo TB20-1(Nr.19-22)', HRC
-#                   , 56,  56, 150, 230, 1060, 1330, 6
-#                   )
-#        , Material ( 'QT42CrMo4N', HRC
-#                   , 48,  57, 260, 430,  780, 1215, 4
-#                   )
-#        , Material ( 'QT16MnCr5N', HRC
-#                   , 48,  57, 260, 430,  780, 1215, 4
-#                   )
-#        , Material ( 'C45E_NN', HRCN
-#                   , 30,  45, 225, 290,  650,  780, 3
-#                   )
-#        , Material ( '16MnCr5N', HRCN
-#                   , 45,  57, 225, 385,  650,  950, 3.5
-#                   )
-#        , Material ( 'QT34Cr4CN', HRCN
-#                   , 55,  60, 300, 450, 1100, 1350, 5.5
-#                   )
-#        , Material ( '16MnCr5EGm20', HRCN
-#                   , 58,  62, 310, 525, 1300, 1650, 9
-#                   )
-#        , Material ( '15CrNi6EGm16', HRCN
-#                   , 58,  62, 310, 525, 1300, 1650, 10
-#                   )
-#        , Material ( '18CrNiMo7-6EGm16', HRCN
-#                   , 58,  62, 310, 525, 1300, 1650, 11
-#                   )
+        , Material ( 'E295', HB, 'normal_annealed'
+                   , 160, 160, 140, 210,  350,  485, 1.1
+                   )
+        , Material ( 'E335', HB, 'normal_annealed'
+                   , 190, 190, 160, 225,  375,  540, 1.7
+                   )
+        , Material ( 'C45E_N', HB, 'normal_annealed'
+                   , 190, 190, 160, 260,  470,  590, 1.7
+                   )
+        , Material ( 'QT34CrMo4', HB, 'tempered'
+                   , 270, 270, 220, 335,  540,  800, 2.4
+                   )
+        , Material ( 'QT42CrMo4', HB, 'tempered'
+                   , 300, 300, 230, 335,  540,  800, 2.4
+                   )
+        , Material ( 'QT34CrNiMo6', HB, 'tempered'
+                   , 310, 310, 235, 345,  580,  840, 2.4
+                   )
+        , Material ( 'QT30CrNiMo8', HB, 'tempered'
+                   , 320, 320, 240, 355,  610,  870, 2.7
+                   )
+        , Material ( 'QT36CrNiMo16', HB, 'tempered'
+                   , 350, 350, 250, 365,  640,  915, 3
+                   )
+        , Material ( 'UH +FH CrMo TB20-1(Nr.19-22)', HRC, 'case_hardened'
+                   , 50,  50, 230, 380,  980, 1275, 5
+                   )
+        , Material ( 'UH -FH CrMo TB20-1(Nr.19-22)', HRC, 'case_hardened'
+                   , 50,  50, 150, 230,  980, 1275, 4
+                   )
+        , Material ( 'EH +FH CrMo TB20-1(Nr.19-22)', HRC, 'case_hardened'
+                   , 56,  56, 270, 410, 1060, 1330, 7
+                   )
+        , Material ( 'EH -FH CrMo TB20-1(Nr.19-22)', HRC, 'case_hardened'
+                   , 56,  56, 150, 230, 1060, 1330, 6
+                   )
+        , Material ( 'QT42CrMo4N', HRC, 'nitrified'
+                   , 48,  57, 260, 430,  780, 1215, 4
+                   )
+        , Material ( 'QT16MnCr5N', HRC, 'nitrified'
+                   , 48,  57, 260, 430,  780, 1215, 4
+                   )
+        , Material ( 'C45E_NN', HRC, 'nitrified'
+                   , 30,  45, 225, 290,  650,  780, 3
+                   )
+        , Material ( '16MnCr5N', HRC, 'nitrified'
+                   , 45,  57, 225, 385,  650,  950, 3.5
+                   )
+        , Material ( 'QT34Cr4CN', HRC, 'nitrified'
+                   , 55,  60, 300, 450, 1100, 1350, 5.5
+                   )
+        , Material ( '16MnCr5EGm20', HRC, 'nitrified'
+                   , 58,  62, 310, 525, 1300, 1650, 9
+                   )
+        , Material ( '15CrNi6EGm16', HRC, 'nitrified'
+                   , 58,  62, 310, 525, 1300, 1650, 10
+                   )
+        , Material ( '18CrNiMo7-6EGm16', HRC, 'nitrified'
+                   , 58,  62, 310, 525, 1300, 1650, 11
+                   )
         )
 
     def __init__ (self, args) :

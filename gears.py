@@ -234,6 +234,7 @@ class Gear (Zone_Factor) :
     # Modul/Breitenverhältnis TB 21-13b
     psi_m = 25
     # Submersion depth default if unspecified in constructor
+    # submersion depth factor 2..5
     submersion_factor = 2
 
     # FIXME
@@ -252,27 +253,24 @@ class Gear (Zone_Factor) :
           7, 9, 11, 14, 18, 22, 28, 36, 45, 55, 70
         ]
 
-    # submersion depth factor 2..5 (sub_fac)
-    def __init__ (self, gb, materials, z, n_ein, shaft, sub_fac = None, **kw) :
+    def __init__ (self, gb, materials, z, n_ein, shaft, **kw) :
         self.__super.__init__ (z, **kw)
+        #import pdb; pdb.set_trace ()
         self.gb        = gb
         self.materials = materials
         self.n_ein     = n_ein
         self.shaft     = shaft
         self.mod_ovl   = 0
-        if sub_fac is not None :
-            self.submersion_factor = sub_fac
         assert len (z) == 2
         assert len (materials) == 2
         # Zone factor Z_H
-        Z_H      = self.zone_factor ()
+        Z_H = self.zone_factor ()
         # Ritzel
         sigma_Hlim = materials [0].sigma_h_lim
         # tatsächliches Übersetzungsverhältnis
         u_tat = self.u_tat = self.z [1] / self.z [0]
         # Betriebsmoment Eingangs-Welle
-        self.T_ges = self.shaft.T_ges
-        T_ges = self.T_ges = self.gb.P * self.gb.K_A / (2 * n_ein * np.pi)
+        self.T_ges = T_ges = self.shaft.T_ges
         # Stirnmodul Rad 1, Rad 2
         psi_d_max = max (m.psi_dlim () for m in materials)
         self.stirnmodul_calc = np.sqrt \
@@ -364,7 +362,6 @@ class Gear (Zone_Factor) :
         """ v must be less than a given number.
             Constraints for the GA must be <= 0
         """
-        print ("V:", self.v)
         if self.beta > 0 :
             return self.v - 15
         return self.v - 10
@@ -423,6 +420,8 @@ class Gearbox :
         for g in self.gears :
             g.profile_overlap ()
 
+        self.oil ()
+
     # end def __init__
 
     def oil (self) :
@@ -431,6 +430,7 @@ class Gearbox :
         """
         g0 = self.gears [0]
         g1 = self.gears [1]
+        self.t = t = []
         t.append (g0.submersion_factor * g0.normalmodul)
         # Ölniveau
         t_oil = g0.D_K [1] / 2 - t [0]
@@ -452,7 +452,6 @@ class Gearbox :
         """ Submersion >= 2
             Checked for <= 0
         """
-        print ("Submersion:", self.gears [1].submersion_factor)
         return 2 - self.gears [1].submersion_factor
     # end def constrain_submersion_lower_bound
 
@@ -546,19 +545,21 @@ class Gear_Optimizer (pga.PGA, autosuper) :
         self.factor = self.args.numerator / self.args.denominator
         # Teeth (4 parameters)
         minmax = [(self.args.min_tooth, self.args.max_tooth)] * 4
-        # Stahl: Index into table "materials" above
+        # Material: Index into table "materials" above
         minmax.extend ([(0, len (self.materials))] * 4)
-        # Schrägungswinkel
+        # Schrägungswinkel beta: in degree in gene, converted to rad later
         minmax.append ((8, 20))
         # Eintauchfaktor Rad1 x_1
         minmax.append ((2, 5))
         # delta_b (should be minimized)
         minmax.append ((0, 1000))
         # Compute number of constraint-methods in Gearbox
-        num_constraint = 1
+        num_constraint = 2
+        self.constraints = []
         for n in Gearbox.__dict__ :
             if n.startswith ('constrain_') :
                 num_constraint += 1
+                self.constraints.append (n)
         d = dict \
             ( maximize             = False
             , num_eval             = 1 + num_constraint
@@ -599,7 +600,7 @@ class Gear_Optimizer (pga.PGA, autosuper) :
                 stahl = len (self.materials) - 1
             stahl = self.materials [stahl]
             mat.append (stahl)
-        beta  = self.get_allele (p, pop, 8)
+        beta  = self.get_allele (p, pop, 8) * np.pi / 180
         x_1   = self.get_allele (p, pop, 9)
         delta_b = self.get_allele (p, pop, 10)
         g = Gearbox (mat, z, beta, self.args.numerator, delta_b)
@@ -609,24 +610,28 @@ class Gear_Optimizer (pga.PGA, autosuper) :
     def evaluate (self, p, pop) :
         gb   = self.phenotype (p, pop)
         g    = gb.gears
-        gc   = gcd (g [0].z [0], g [0].z [1]) + gcd (g [0].z [0], g [0].z [1])
+        z    = []
+        z.extend (g [0].z)
+        z.extend (g [1].z)
+        gc   = gcd (* z [:2]) + gcd (*z [2:])
         ferr = (self.factor - gb.factor) ** 2
-        constraints = []
-        ret = [ferr, gc - 2]
-        for n in Gearbox.__dict__ :
-            if n.startswith ('constrain_') :
-                m = getattr (gb, n)
-                ret.append (m ())
+        ret  = [ferr, self.err (*z) - 1, gc - 2]
+        for n in self.constraints :
+            m = getattr (gb, n)
+            ret.append (m ())
         return ret
     # end def evaluate
 
     def print_string (self, file, p, pop) :
+        gb = self.phenotype (p, pop)
         z = []
-        for i in range (4) :
-            z.append (round (self.get_allele (p, pop, i)))
+        for g in gb.gears :
+            z.extend (g.z)
         print (z, file = file)
         print ("Gear Error: %12.9f%%" % self.err (*z))
         print ("Random seed: %d" % self.random_seed)
+        for n in self.constraints :
+            print ("%s: %s" % (n, getattr (gb, n)()))
         self.__super.print_string (file, p, pop)
     # end def print_string
 
@@ -641,12 +646,12 @@ if __name__ == '__main__' :
     cmd.add_argument \
         ( '-l', '--min-tooth'
         , type    = int
-        , default = 12
+        , default = 17
         )
     cmd.add_argument \
         ( '-u', '--max-tooth'
         , type    = int
-        , default = 60
+        , default = 200
         )
     cmd.add_argument \
         ( '-d', '--denominator'

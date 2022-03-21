@@ -273,12 +273,13 @@ class Gear (Zone_Factor) :
         self.T_ges = T_ges = self.shaft.T_ges
         # Stirnmodul Rad 1, Rad 2
         self.psi_d_max = psi_d_max = max (m.psi_dlim () for m in materials)
-        self.stirnmodul_calc = np.sqrt \
-            ( (2 * T_ges * 1.2) / ((sigma_Hlim / 1.4) ** 2)
+        # T_ges is Nm -> convert to mm
+        self.stirnmodul_calc = \
+            ( (2 * T_ges * 1.2e3) / ((sigma_Hlim / 1.4) ** 2)
             * (u_tat + 1) / u_tat
             * (self.Z_E ** 2) * (Z_H ** 2)
             * 1 / (psi_d_max * self.z [0] ** 3)
-            )
+            ) ** (1/3)
         self.normalmodul_calc = self.stirnmodul_calc * np.cos (self.beta)
         # lookup moduln
         idx = bisect_right (self.modul_DIN_780_I, self.normalmodul_calc)
@@ -372,47 +373,51 @@ class Gear (Zone_Factor) :
 class Gearbox :
     """ The gearbox with all the sub-parts
     >>> HB = Material.HB
-    >>> na = 'normal_annealed'
-    >>> m = Material ('', HB, na, 0, 0, 0, 0, 315, 430, 1)
-    >>> z = [1, 2, 3, 4]
-    >>> beta = 8 * np.pi / 180
+    >>> xx = 'tempered'
+    >>> m1 = Material ('', HB, xx, 0, 0, 0, 0, 740, 740, 1)
+    >>> m2 = Material ('', HB, xx, 0, 0, 0, 0, 710, 710, 1)
+    >>> m3 = Material ('', HB, xx, 0, 0, 0, 0, 777.5, 777.5, 1)
+    >>> m4 = Material ('', HB, xx, 0, 0, 0, 0, 740, 740, 1)
+    >>> m  = [m1, m2, m3, m4]
+    >>> z = [19, 89, 21, 76]
+    >>> beta = 18 * np.pi / 180
     >>> n  = 3510
     >>> delta_b = 0
-    >>> gb = Gearbox ([m] * 4, z, beta, n, delta_b)
+    >>> gb = Gearbox (m, z, beta, n, delta_b)
     >>> g0 = gb.gears [0]
     >>> g1 = gb.gears [1]
-    >>> print ("%.4f" % g0.T_ges)
-    3.4007
-    >>> print ("%.4f" % g0.Z_H)
-    2.4746
-    >>> print ("%.4f" % g0.sigma_Hlim)
-    372.5000
-    >>> print ("%.4f" % g0.u_tat)
-    2.0000
-    >>> print ("%.4f" % g0.psi_d_max)
-    1.3000
-    >>> print ("%.4f" % g0.stirnmodul_calc)
-    5.4171
-    >>> print ("%.4f" % g0.normalmodul_calc)
-    5.3644
-    >>> print ("%.4f" % g0.stirnmodul)
-    6.0590
-    >>> print ("%.4f" % g0.normalmodul)
-    6.0000
-    >>> print ("%.4f %.4f" % tuple (g0.D_R))
-    6.0590 12.1179
-    >>> print ("%.4f %.4f" % tuple (g0.D_K))
-    18.0590 24.1179
-    >>> print ("%.4f" % g0.b)
-    150.0000
-    >>> print ("%.4f %.4f" % tuple (g0.psi_d))
-    24.7567 12.3784
-    >>> print ("%.4f" % g0.v)
-    133624.3051
-    >>> print ("%.4f" % g0.d_RW)
-    -8.2622
-    >>> print ("%.4f" % g0.d_W)
-    -5.0491
+    >>> print ("T_ges: %.4f" % g0.T_ges)
+    T_ges: 204.0448
+    >>> print ("Z_H: %.4f" % g0.Z_H)
+    Z_H: 2.3944
+    >>> print ("sigma_Hlim: %.4f" % g0.sigma_Hlim)
+    sigma_Hlim: 740.0000
+    >>> print ("u_tat: %.4f" % g0.u_tat)
+    u_tat: 4.6842
+    >>> print ("psi_d_max: %.4f" % g0.psi_d_max)
+    psi_d_max: 1.1000
+    >>> print ("m_tcalc: %.4f" % g0.stirnmodul_calc)
+    m_tcalc: 3.8759
+    >>> print ("m_ncalc: %.4f" % g0.normalmodul_calc)
+    m_ncalc: 3.6862
+    >>> print ("m_t: %.4f" % g0.stirnmodul)
+    m_t: 4.2058
+    >>> print ("m_n: %.4f" % g0.normalmodul)
+    m_n: 4.0000
+    >>> print ("D_R: %.4f %.4f" % tuple (g0.D_R))
+    D_R: 6.0590 12.1179
+    >>> print ("D_K: %.4f %.4f" % tuple (g0.D_K))
+    D_K: 18.0590 24.1179
+    >>> print ("b: %.4f" % g0.b)
+    b: 150.0000
+    >>> print ("psi_d: %.4f %.4f" % tuple (g0.psi_d))
+    psi_d: 24.7567 12.3784
+    >>> print ("v: %.4f" % g0.v)
+    v: 133624.3051
+    >>> print ("d_RW: %.4f" % g0.d_RW)
+    d_RW: -8.2622
+    >>> print ("d_W: %.4f" % g0.d_W)
+    d_W: -5.0491
 
     """
     # Anwendungsfaktor K_A
@@ -421,10 +426,13 @@ class Gearbox :
     P   = 50e3
 
     def __init__ (self, materials, z, beta, n, delta_b) :
+        """ Note that n is minutes^-1
+        """
         assert len (z) == 4
         assert len (materials) == 4
         n2 = n * z [0] / z [1]
-        T_ges = self.P * self.K_A / (2 * n * np.pi)
+        # Betriebsmoment (minutes not seconds)
+        T_ges = self.P * self.K_A / (2 * n * np.pi) * 60
         s = self.shaft = []
         g = self.gears = []
         s.append (Shaft (self, T_ges))

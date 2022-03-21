@@ -84,7 +84,7 @@ class Material :
         return (self.sigma_h_lim_min + self.sigma_h_lim_max) / 2
     # end def sigma_h_lim
 
-    def psi_dlim (self, shaft_bearing) :
+    def psi_dlim (self, shaft_bearing = 'asymmetrical') :
         """ Compute *maximum* psi_d from given shaft bearing
             and the parameter of the material
         """
@@ -253,52 +253,73 @@ class Gear (Zone_Factor) :
         ]
 
     # submersion depth factor 2..5 (sub_fac)
-    def __init__ (self, materials, z, n_ein, shaft, sub_fac = None, **kw) :
+    def __init__ (self, gb, materials, z, n_ein, shaft, sub_fac = None, **kw) :
         self.__super.__init__ (z, **kw)
+        self.gb        = gb
         self.materials = materials
-        self.beta      = beta
         self.n_ein     = n_ein
         self.shaft     = shaft
-        if s_depth is not None :
+        self.mod_ovl   = 0
+        if sub_fac is not None :
             self.submersion_factor = sub_fac
         assert len (z) == 2
         assert len (materials) == 2
         # Zone factor Z_H
         Z_H      = self.zone_factor ()
         # Ritzel
-        sigma_Hlim = m [0].sigma_h_lim
+        sigma_Hlim = materials [0].sigma_h_lim
         # tatsächliches Übersetzungsverhältnis
-        u_tat = z [1] / z [0]
+        u_tat = self.u_tat = self.z [1] / self.z [0]
         # Betriebsmoment Eingangs-Welle
         self.T_ges = self.shaft.T_ges
-        T_ges = self.P * self.K_A / (2 * n_ein * np.pi)
+        T_ges = self.T_ges = self.gb.P * self.gb.K_A / (2 * n_ein * np.pi)
         # Stirnmodul Rad 1, Rad 2
-        psi_d_max = max (m.psi_dlim for m in materials)
+        psi_d_max = max (m.psi_dlim () for m in materials)
         self.stirnmodul_calc = np.sqrt \
             ( (2 * T_ges * 1.2) / ((sigma_Hlim / 1.4) ** 2)
             * (u_tat + 1) / u_tat
             * (self.Z_E ** 2) * (Z_H ** 2)
-            * 1 / (psi_d_max * z [0] ** 3)
+            * 1 / (psi_d_max * self.z [0] ** 3)
             )
-        self.normalmodul_calc = self.stirnmodul_calc * np.cos (beta)
+        self.normalmodul_calc = self.stirnmodul_calc * np.cos (self.beta)
         # lookup moduln
         idx = bisect_right (self.modul_DIN_780_I, self.normalmodul_calc)
-        nm_I = modul_DIN_780_I [idx]
-        if nm_I < self.normalmodul_calc :
-            nm_I = modul_DIN_780_I [idx + 1]
-        nm_II = modul_DIN_780_II [idx]
-        if nm_II < self.normalmodul_calc :
-            nm_II = modul_DIN_780_II [idx + 1]     
-        self.stirnmodul = self.normalmodul / np.cos (beta)
+        if idx >= len (self.modul_DIN_780_I) :
+            self.mod_ovl += 1
+            nm_I = self.modul_DIN_780_I [-1]
+        else :
+            nm_I = self.modul_DIN_780_I [idx]
+            if nm_I < self.normalmodul_calc :
+                nm_I = self.modul_DIN_780_I [idx + 1]
+        idx = bisect_right (self.modul_DIN_780_II, self.normalmodul_calc)
+        if idx >= len (self.modul_DIN_780_II) :
+            self.mod_ovl += 1
+            nm_II = self.modul_DIN_780_II [-1]
+        else :
+            nm_II = self.modul_DIN_780_II [idx]
+            if nm_II < self.normalmodul_calc :
+                nm_II = self.modul_DIN_780_II [idx + 1]
+            # Overflow for nm_I ?
+            if self.mod_ovl :
+                assert self.mod_ovl == 1
+                self.mod_ovl = 0
+                nm_I = None
+        self.normalmodul = nm_I
+        # This only occurs if last value of table-I is too small but the
+        # last item (70) of table-II matches
+        if self.normalmodul is None :
+            self.normalmodul = nm_II
+
+        self.stirnmodul = self.normalmodul / np.cos (self.beta)
         # Only keep nm_II if it matches better than nm_I
         if  ( abs (nm_I  - self.normalmodul_calc)
             < abs (nm_II - self.normalmodul_calc)
             ) :
             nm_II = None
-        self.D_R = z * self.stirnmodul
+        self.D_R = self.z * self.stirnmodul
         self.D_K = self.D_R + 2 * self.normalmodul
         # Durchmesser/Breitenverhältnis
-        b   = self.psi_m * self.normalmodul
+        self.b = b = self.psi_m * self.normalmodul
         # check breite
         self.psi_d = b / self.D_R # <= psi_dlim
 
@@ -318,18 +339,18 @@ class Gear (Zone_Factor) :
         return self.T_ges * self.u_tat
     # end def out_T_ges
 
-    def profile_overlap (self, gearbox) :
+    def profile_overlap (self) :
         """ Profilüberdeckung
         """
         m_t = self.stirnmodul
-        D_b = self.D_R * np.cos (self.alpha_t)
+        D_b = self.D_b = self.D_R * np.cos (self.alpha_t)
         self.epsilon_alpha = \
             ( ( 0.5
-              * ( np.sqrt (D_K [0] ** 2 - D_b [0] ** 2)
-                + np.sqrt (D_K [1] ** 2 - D_b [1] ** 2)
+              * ( np.sqrt (self.D_K [0] ** 2 - D_b [0] ** 2)
+                + np.sqrt (self.D_K [1] ** 2 - D_b [1] ** 2)
                 )
               )
-            - gearbox.a * np.sin (self.alpha_t)
+            - self.gb.a * np.sin (self.alpha_t)
             ) / (np.pi * m_t * np.cos (self.alpha_t))
 
         # FIXME
@@ -337,12 +358,13 @@ class Gear (Zone_Factor) :
         ### epsilon_alphan = epsilon_alpha / np.cos (beta) ** 2
         # Sprungüberdeckung (nur für Schrägvz) >1
         ### epsilon_beta = b_Rad * np.sin (beta) / np.pi * m_n
-    # end def profile_overlap (self)
+    # end def profile_overlap
 
     def constrain_v (self) :
         """ v must be less than a given number.
             Constraints for the GA must be <= 0
         """
+        print ("V:", self.v)
         if self.beta > 0 :
             return self.v - 15
         return self.v - 10
@@ -364,12 +386,12 @@ class Gearbox :
         s = self.shaft = []
         g = self.gears = []
         s.append (Shaft (self, T_ges))
-        g.append (Gear  (materials [:2], z [:2], n, s [-1], beta = beta))
+        g.append (Gear  (self, materials [:2], z [:2], n, s [-1], beta = beta))
         s.append (Shaft (self, g [-1].out_T_ges))
-        g.append (Gear  (materials [2:], z [2:], n2, s [-1], beta = 0))
+        g.append (Gear  (self, materials [2:], z [2:], n2, s [-1]))
         s.append (Shaft (self, g [-1].out_T_ges))
 
-        self.fac = (z [0] * z [2]) / (z [1] * z [3])
+        self.factor = (z [0] * z [2]) / (z [1] * z [3])
         self.delta_b = delta_b
 
         g = self.gears
@@ -382,7 +404,7 @@ class Gearbox :
         # Flanschdicke
         s_d = 1.5 * s_Wg
         # Gehäuse Innenlänge
-        a = [sum (x.D_K) / 2 for x in g]
+        a = self.a = np.array ([sum (x.D_K) / 2 for x in g])
         l_Gi = ( sum (a)
                + (g [0].D_K [0] + g [1].D_K [1]) / 2
                + sum (s_z)
@@ -391,7 +413,7 @@ class Gearbox :
         l_12 = ((g [0].b - 2) + (g [1].b)) / 2 + s_z [1]
         l_0G = g [0].b / 2 + s_z [0]
         l_1G = g [1].b / 2 + s_z [1]
-        b_Gi = l_12 + l_1G + l_2G
+        b_Gi = l_12 + l_0G + l_1G
 
         l_GL = delta_b + s_Wg + g [0].b / 2
         l_A  = l_GL + l_0G
@@ -399,7 +421,7 @@ class Gearbox :
         l_AB = l_A  + l_B + l_12
 
         for g in self.gears :
-            g.profile_overlap (self)
+            g.profile_overlap ()
 
     # end def __init__
 
@@ -415,7 +437,7 @@ class Gearbox :
         # Eintauchtiefe Rad2
         t.append (g1.D_K [1] / 2 - t_oil)
         # Eintauchfaktor Rad2
-        submersion_factor_2 = t [1] / g1.normalmodul 
+        submersion_factor_2 = t [1] / g1.normalmodul
         g1.submersion_factor = submersion_factor_2
     # end def oil
 
@@ -430,6 +452,7 @@ class Gearbox :
         """ Submersion >= 2
             Checked for <= 0
         """
+        print ("Submersion:", self.gears [1].submersion_factor)
         return 2 - self.gears [1].submersion_factor
     # end def constrain_submersion_lower_bound
 
@@ -531,10 +554,15 @@ class Gear_Optimizer (pga.PGA, autosuper) :
         minmax.append ((2, 5))
         # delta_b (should be minimized)
         minmax.append ((0, 1000))
+        # Compute number of constraint-methods in Gearbox
+        num_constraint = 1
+        for n in Gearbox.__dict__ :
+            if n.startswith ('constrain_') :
+                num_constraint += 1
         d = dict \
             ( maximize             = False
-            , num_eval             = 2
-            , num_constraint       = 1
+            , num_eval             = 1 + num_constraint
+            , num_constraint       = num_constraint
             , pop_size             = 60
             , num_replace          = 60
             , select_type          = pga.PGA_SELECT_LINEAR
@@ -555,8 +583,9 @@ class Gear_Optimizer (pga.PGA, autosuper) :
         self.__super.__init__ (float, len (minmax), **d)
     # end def __init__
 
-    def err (self, x1, x2, x3, x4) :
-        return abs (self.factor - (x3 * x4) / (x1 * x2)) / self.factor * 100
+    def err (self, *z) :
+        f = self.factor
+        return abs (f - (z [0] * z [2]) / (z [1] * z [3])) / f * 100
     # end def err
 
     def phenotype (self, p, pop) :
@@ -573,16 +602,22 @@ class Gear_Optimizer (pga.PGA, autosuper) :
         beta  = self.get_allele (p, pop, 8)
         x_1   = self.get_allele (p, pop, 9)
         delta_b = self.get_allele (p, pop, 10)
-        g = Gearbox (mat, z, beta, x_1, n_ein = self.args.numerator)
+        g = Gearbox (mat, z, beta, self.args.numerator, delta_b)
         return g
     # end def phenotype
 
     def evaluate (self, p, pop) :
-        # FIXME: Use phenotype above,
-        #        decide what checks to put into Gearbox class
-        gc1 = gcd (z [0], z [2]) + gcd (z [1], z [3])
-        f   = (1 / self.factor - fac) ** 2
-        return f, min (gc1, gc2) - 2
+        gb   = self.phenotype (p, pop)
+        g    = gb.gears
+        gc   = gcd (g [0].z [0], g [0].z [1]) + gcd (g [0].z [0], g [0].z [1])
+        ferr = (self.factor - gb.factor) ** 2
+        constraints = []
+        ret = [ferr, gc - 2]
+        for n in Gearbox.__dict__ :
+            if n.startswith ('constrain_') :
+                m = getattr (gb, n)
+                ret.append (m ())
+        return ret
     # end def evaluate
 
     def print_string (self, file, p, pop) :
@@ -630,6 +665,7 @@ if __name__ == '__main__' :
     cmd.add_argument \
         ( '-r', '--random-seed'
         , type    = int
+        , default = 42
         )
     args = cmd.parse_args ()
     if args.plot_zone_factor :

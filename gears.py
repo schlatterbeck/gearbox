@@ -264,15 +264,15 @@ class Gear (Zone_Factor) :
         assert len (z) == 2
         assert len (materials) == 2
         # Zone factor Z_H
-        Z_H = self.zone_factor ()
+        self.Z_H = Z_H = self.zone_factor ()
         # Ritzel
-        sigma_Hlim = materials [0].sigma_h_lim
+        self.sigma_Hlim = sigma_Hlim = materials [0].sigma_h_lim
         # tatsächliches Übersetzungsverhältnis
         u_tat = self.u_tat = self.z [1] / self.z [0]
         # Betriebsmoment Eingangs-Welle
         self.T_ges = T_ges = self.shaft.T_ges
         # Stirnmodul Rad 1, Rad 2
-        psi_d_max = max (m.psi_dlim () for m in materials)
+        self.psi_d_max = psi_d_max = max (m.psi_dlim () for m in materials)
         self.stirnmodul_calc = np.sqrt \
             ( (2 * T_ges * 1.2) / ((sigma_Hlim / 1.4) ** 2)
             * (u_tat + 1) / u_tat
@@ -370,6 +370,51 @@ class Gear (Zone_Factor) :
 # end class Gear
 
 class Gearbox :
+    """ The gearbox with all the sub-parts
+    >>> HB = Material.HB
+    >>> na = 'normal_annealed'
+    >>> m = Material ('', HB, na, 0, 0, 0, 0, 315, 430, 1)
+    >>> z = [1, 2, 3, 4]
+    >>> beta = 8 * np.pi / 180
+    >>> n  = 3510
+    >>> delta_b = 0
+    >>> gb = Gearbox ([m] * 4, z, beta, n, delta_b)
+    >>> g0 = gb.gears [0]
+    >>> g1 = gb.gears [1]
+    >>> print ("%.4f" % g0.T_ges)
+    3.4007
+    >>> print ("%.4f" % g0.Z_H)
+    2.4746
+    >>> print ("%.4f" % g0.sigma_Hlim)
+    372.5000
+    >>> print ("%.4f" % g0.u_tat)
+    2.0000
+    >>> print ("%.4f" % g0.psi_d_max)
+    1.3000
+    >>> print ("%.4f" % g0.stirnmodul_calc)
+    5.4171
+    >>> print ("%.4f" % g0.normalmodul_calc)
+    5.3644
+    >>> print ("%.4f" % g0.stirnmodul)
+    6.0590
+    >>> print ("%.4f" % g0.normalmodul)
+    6.0000
+    >>> print ("%.4f %.4f" % tuple (g0.D_R))
+    6.0590 12.1179
+    >>> print ("%.4f %.4f" % tuple (g0.D_K))
+    18.0590 24.1179
+    >>> print ("%.4f" % g0.b)
+    150.0000
+    >>> print ("%.4f %.4f" % tuple (g0.psi_d))
+    24.7567 12.3784
+    >>> print ("%.4f" % g0.v)
+    133624.3051
+    >>> print ("%.4f" % g0.d_RW)
+    -8.2622
+    >>> print ("%.4f" % g0.d_W)
+    -5.0491
+
+    """
     # Anwendungsfaktor K_A
     K_A = 1.5
     # Leistung P

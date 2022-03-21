@@ -75,14 +75,14 @@ class Material :
     # end def hardness
 
     @property
-    def delta_f_lim (self) :
-        return (self.delta_f_lim_min + self.delta_f_lim_max) / 2
-    # end def delta_f_lim
+    def sigma_f_lim (self) :
+        return (self.sigma_f_lim_min + self.sigma_f_lim_max) / 2
+    # end def sigma_f_lim
 
     @property
-    def delta_h_lim (self) :
-        return (self.delta_h_lim_min + self.delta_h_lim_max) / 2
-    # end def delta_h_lim
+    def sigma_h_lim (self) :
+        return (self.sigma_h_lim_min + self.sigma_h_lim_max) / 2
+    # end def sigma_h_lim
 
     def psi_dlim (self, shaft_bearing) :
         """ Compute *maximum* psi_d from given shaft bearing
@@ -93,14 +93,62 @@ class Material :
 
 # end class Material
 
+class Shaft :
+    def __init__ (self, gearbox, T_ges) :
+        self.gearbox = gearbox
+        self.T_ges   = T_ges
+    # end def __init__
+
+    def add_gears (input_gear = None, output_gear = None) :
+        self.input_gear  = input_gear
+        self.output_gear = output_gear
+
+        g = self.gear = input_gear
+        if g is None :
+            g = output_gear
+        # Tangentialkraft
+        self.F_t = 2 * self.T_ges / g.D_R [0]
+        # Radialkraft
+        self.F_r = self.F_t * np.tan (g.alpha) / np.cos (g.beta)
+        # Axialkraft
+        self.F_a = self.F_t * np.tan (g.beta)
+        # Bearings
+        # FIXME
+        gb = self.gearbox
+        # FIXME: This is different for each Shaft depending on
+        # input/output gear(s)
+        # Tangentiale Lagerkraft A, B
+        self.F_Bt = F_t * gb.l_A / gb.l_AB
+        self.F_At = F_t - F_Bt
+        # Normale Lagerkraft A, B
+        self.F_Bn = F_r * gb.l_A / gb.l_AB
+        self.F_An = F_r - F_Bn
+        # Radiale Lagerkraft A, B
+        self.F_Br = np.sqrt (F_Bt ** 2 + F_Bn ** 2)
+        self.F_Ar = np.sqrt (F_At ** 2 + F_An ** 2)
+        # Axiale Lagerkraft A, B
+        #self.F_Ba = FIXME
+        #self.F_Aa = FIXME
+
+        #F_Bt = F_t * gb.l_A + F_t2 * (gb.l_AB - l_B2)
+        #M_bmax = F_Br * gb.l_B
+        #M_v = np.sqrt (M_bmax ** 2 + 0.75 * (0.7 * T_ges) ** 2)
+
+    # end def add_input_gear
+# end class Shaft
+
 class Gear :
 
     # Constants (for this project at least):
     alpha = np.pi * 20 / 180
-    # Anwendungsfaktor K_A
-    K_A = 1.5
     # Profilverschiebung (profile shift)
     profile_shift = [0, 0]
+    # Elastizitätsfaktor Stahl-Stahl TB21-21b
+    Z_E = 189.8
+    # Modul/Breitenverhältnis TB 21-13b
+    psi_m = 25
+    # Submersion depth default if unspecified in constructor
+    submersion_factor = 2
 
     # FIXME
     # A note on modul: This is a european way to describe this, the
@@ -118,36 +166,37 @@ class Gear :
           7, 9, 11, 14, 18, 22, 28, 36, 45, 55, 70
         ]
 
-    def __init__ (self, materials, z, beta, n_ein) :
+    # submersion depth factor 2..5 (sub_fac)
+    def __init__ (self, materials, z, beta, n_ein, shaft, sub_fac = None) :
         self.materials = materials
-        self.z         = z
+        self.z         = np.array (z)
         self.beta      = beta
+        self.n_ein     = n_ein
+        self.shaft     = shaft
+        self.alpha_t   = atan (np.tan (self.alpha) / np.cos (beta))
+        if s_depth is not None :
+            self.submersion_factor = sub_fac
         assert len (z) == 2
         assert len (materials) == 2
-        # Leistung P
-        self.P   = 50e3
-        #Z_E = FIXME
-        self.Z_E = 189.8
-#        for i, (m, zahn) in enumerate (zip (materials, z)) :
-            delta_Hlim = m.delta_h_lim
-            ### FIXME: psi_dlim ???
-            m_t[FIXME] =
-            psi_d = 
-            ###psi_d      = m.psi_d
-            psi_d = 1 # FIXME
-            u_tat      = z [1] / z [0]
-            # Betriebsmoment Welle
-            T_ges = self.P * self.K_A / (2 * n_r * np.pi)
-            Z_H2  = 1 # FIXME
+        # Zone factor Z_H
+        Z_H      = self.zone_factor ()
+        # Ritzel
+        sigma_Hlim = m [0].sigma_h_lim
+        # tatsächliches Übersetzungsverhältnis
+        u_tat = z [1] / z [0]
+        # Betriebsmoment Eingangs-Welle
+        self.T_ges = self.shaft.T_ges
+        T_ges = self.P * self.K_A / (2 * n_ein * np.pi)
         # Stirnmodul Rad 1, Rad 2
+        psi_d_max = max (m.psi_dlim for m in materials)
         self.stirnmodul_calc = np.sqrt \
-            ( (2 * T_ges * 1.2) / ((delta_Hlim / 1.4) ** 2)
+            ( (2 * T_ges * 1.2) / ((sigma_Hlim / 1.4) ** 2)
             * (u_tat + 1) / u_tat
-            * (self.Z_E ** 2) * (Z_H2 ** 2)
-            * 1 / (psi_d * z [0] ** 3)
+            * (self.Z_E ** 2) * (Z_H ** 2)
+            * 1 / (psi_d_max * z [0] ** 3)
             )
         self.normalmodul_calc = self.stirnmodul_calc * np.cos (beta)
-        #lookup moduln
+        # lookup moduln
         idx = bisect_right (self.modul_DIN_780_I, self.normalmodul_calc)
         nm_I = modul_DIN_780_I [idx]
         if nm_I < self.normalmodul_calc :
@@ -156,14 +205,27 @@ class Gear :
         if nm_II < self.normalmodul_calc :
             nm_II = modul_DIN_780_II [idx + 1]     
         self.stirnmodul = self.normalmodul / np.cos (beta)
-        if abs (nm_I - self.normalmodul_calc) < abs (nm_II - self.normalmodul_calc) :
+        # Only keep nm_II if it matches better than nm_I
+        if  ( abs (nm_I  - self.normalmodul_calc)
+            < abs (nm_II - self.normalmodul_calc)
+            ) :
             nm_II = None
-        
+        self.D_R = z * self.stirnmodul
+        self.D_K = self.D_R + 2 * self.normalmodul
+        # Durchmesser/Breitenverhältnis
+        b   = self.psi_m * self.normalmodul
+        # check breite
+        self.psi_d = b / self.D_R # <= psi_dlim
 
-#        sm= 5.85409
-#        sm *cos beta
-#        sm_tabelle= 6
-#        sm_tab /cos beta
+        # v out
+        self.v = self.D_R [1] * n_ein * np.pi
+
+        # d_RW gibt maximalen durchmesser Ritzelwelle
+        m_n = self.normalmodul
+        self.d_RW = m_n * (z [0] - 2.5) / (1.1 * np.cos (self.beta))
+        # d_W gibt maximalen Durchmesser Welle mit aufgestecktem Ritzel
+        self.d_W  = m_n * (z [0] - 2.5) / (1.8 * np.cos (self.beta))
+
     # end def __init__
 
     @property
@@ -173,6 +235,32 @@ class Gear :
         return sum (self.profile_shift) / sum (self.z)
     # end def profile_shift_normalized
 
+    @property
+    def out_T_ges (self) :
+        return self.T_ges * self.u_tat
+    # end def out_T_ges
+
+    def profile_overlap (self, gearbox)
+        """ Profilüberdeckung
+        """
+        m_t = self.stirnmodul
+        D_b = self.D_R * np.cos (self.alpha_t)
+        self.epsilon_alpha =
+            ( ( 0.5
+              * ( np.sqrt (D_K [0] ** 2 - D_b [0] ** 2)
+                + np.sqrt (D_K [1] ** 2 - D_b [1] ** 2)
+                )
+              )
+            - gearbox.a * np.sin (self.alpha_t)
+            ) / (np.pi * m_t * np.cos (self.alpha_t))
+
+        # FIXME
+        # Normal-Profilüberdeckung zwischen [1.1,1.25]
+        ### epsilon_alphan = epsilon_alpha / np.cos (beta) ** 2
+        # Sprungüberdeckung (nur für Schrägvz) >1
+        ### epsilon_beta = b_Rad * np.sin (beta) / np.pi * m_n
+    # end def profile_overlap (self)
+
     def zone_factor (self, beta = None, shift = None) :
         """ Zone factor Z_H. This typically gets the transmission index
             and computes all the other values from it.
@@ -180,7 +268,8 @@ class Gear :
             inverse of the involute. The largest angle we use is 37.43°
         >>> m  = Material ('S235JR', Material.HB, 'normal_annealed'
         ...               , 120, 120, 125, 190, 315, 430, 1)
-        >>> g  = Gear ((m, m), (30, 30), 15, 1)
+        >>> s  = Shaft (1)
+        >>> g  = Gear ((m, m), (30, 30), 15, 1, s)
         >>> zf = g.zone_factor
         >>> print ("%.5f" % zf (beta = 0, shift = 0))
         2.49457
@@ -205,16 +294,18 @@ class Gear :
             beta = self.beta
         if shift is None :
             shift = self.profile_shift_normalized
-        alpha_t = atan (np.tan (self.alpha) / np.cos (beta))
-        beta_b  = atan (np.tan (beta) * np.cos (alpha_t))
+        beta_b  = atan (np.tan (beta) * np.cos (self.alpha_t))
         if shift == 0 :
-            alpha_tw = alpha_t
+            alpha_tw = self.alpha_t
         else :
             inv_alpha_tw = \
-                np.tan (alpha_t) - alpha_t + 2 * np.tan (self.alpha) * shift
+                ( np.tan (self.alpha_t)
+                - self.alpha_t
+                + 2 * np.tan (self.alpha) * shift
+                )
             alpha_tw = inv_involute (inv_alpha_tw)
         return \
-            ( (1 / np.cos (alpha_t))
+            ( (1 / np.cos (self.alpha_t))
             * np.sqrt (2 * np.cos (beta_b) / np.tan (alpha_tw))
             )
     # end def zone_factor
@@ -241,81 +332,107 @@ class Gear :
         plt.show ()
     # end def plot_zone_factor
 
+    def constrain_v (self) :
+        """ v must be less than a given number.
+            Constraints for the GA must be <= 0
+        """
+        if self.beta > 0 :
+            return self.v - 15
+        return self.v - 10
+    # end def constrain_v
+
 # end class Gear
 
 class Gearbox :
-    def __init__ (self, materials, z, beta, n_ein) :
+    # Anwendungsfaktor K_A
+    K_A = 1.5
+    # Leistung P
+    P   = 50e3
+
+    def __init__ (self, materials, z, beta, n, delta_b) :
         assert len (z) == 4
         assert len (materials) == 4
-        # FIXME: the two gears get different parameters (beta, n_ein)
-        self.gears = \
-            [ Gear (materials [:2], z [:2], beta, n_ein)
-            , Gear (materials [2:], z [2:], beta, n_ein)
-            ]
+        n2 = n * z [0] / z [1]
+        T_ges = self.P * self.K_A / (2 * n * np.pi)
+        s = self.shaft = []
+        g = self.gears = []
+        self.shaft.append (Shaft (self, T_ges))
+        self.gears.append (Gear (materials [:2], z [:2], beta, n, s [-1]))
+        self.shaft.append (Shaft (self, g [-1].out_T_ges))
+        self.gears.append (Gear (materials [2:], z [2:], 0, n2, s [-1]))
+        self.shaft.append (Shaft (self, g [-1].out_T_ges))
+
         self.fac = (z [0] * z [2]) / (z [1] * z [3])
-        # FIXME: The following probably should be moved to the Gear class
-        #        And we probably want the different computations in
-        #        different methods of that class -- with separate tests
-        # FIXME: We probably want to rename variables for english terms
-        #        e.g. n_ein -> n_in (?) etc. or even longer names, e.g.
-        #        instead of n_in we might use rotary_speed
-        # Eingangsdrehzahl n_ein
-        self.n_ein = n_ein
-        # Durchmesser/Breitenverhältnis
-        # Modul/Breitenverhältnis TB 21-13b small-> easier; FIXABLE TB
-        self.phi_m = 20
-        # FIXME: see n_ein same value?
-        ### self.n_r          = self.args.numerator
-        n_r = n_ein # FIXME ?????
+        self.delta_b = delta_b
 
-        ### max:
+        g = self.gears
+        # Distance of box to first wheel
+        s_z = [3 * x.normalmodul for x in g]
+        # Wandstärke Gehäuse (s_12)
+        s_Wg = 8 # FIXME from table GJS RM S.785/20.6
+        # Flanschbreite
+        s_b = 3 * s_Wg + 10
+        # Flanschdicke
+        s_d = 1.5 * s_Wg
+        # Gehäuse Innenlänge
+        a = [sum (x.D_K) / 2 for x in g]
+        l_Gi = ( sum (a)
+               + (g [0].D_K [0] + g [1].D_K [1]) / 2
+               + sum (s_z)
+               )
+        # Gehäuse Innenbreite
+        l_12 = ((g [0].b - 2) + (g [1].b)) / 2 + s_z [1]
+        l_0G = g [0].b / 2 + s_z [0]
+        l_1G = g [1].b / 2 + s_z [1]
+        b_Gi = l_12 + l_1G + l_2G
 
-        ### normalmodul = m_n
+        l_GL = delta_b + s_Wg + g [0].b / 2
+        l_A  = l_GL + l_0G
+        l_B  = l_GL + l_1G
+        l_AB = l_A  + l_B + l_12
 
+        for g in self.gears :
+            g.profile_overlap (self)
 
-        # Zahnbreite
-        ### b = phi_m * m_n
-        # check breite
-        ### psi_d = b / D_R # = psi_dlim
-
-        # check umfangs v
-        ### v = D_Ritzel * n_ein * np.pi
-        ### v <= 10
-        ###     if beta == 0
-        ###     else 15
-
-        # m_n Normalmodul
-
-        # d_RW gibt maximalen durchmesser Ritzelwelle
-        ### d_RW = m_n * (z_R - 2.5) / (1.1 * np.cos (beta))
-        # d_W gibt maximalen Durchmesser Welle mit aufgestecktem Ritzel
-        ### d_W  = m_n * (z_R - 2.5) / (1.8 * np.cos (beta))
-
-        # Kopfkreisdurchmesser
-        ### D_KRad = D_Rad + 2 * m_n
-        # Profilüberdeckung
-        ### epsilon_alpha = (  0.5
-        ###                 * np.sqrt (D_KRitzel ** 2 - D_bRitzel ** 2)
-        ###                 + np.sqrt (D_KRad ** 2 - D_bRad ** 2)
-        ###                 - a * np.sin (alpha_t)
-        ###                 / np.pi * m_t * np.cos (alpha_t)
-        ###                 )
-        # Normal-Profilüberdeckung zwischen [1.1,1.25]
-        ### epsilon_alphan = epsilon_alpha / np.cos (beta) ** 2
-        # Sprungüberdeckung (nur für Schrägvz) >1
-        ### epsilon_beta = b_Rad * np.sin (beta) / np.pi * m_n
-
-    ### Öltauchschmierung hier tatsächlich wichtig beide Großräder zu
-    ### beschreiben
-        # Eintauchtiefe
-        ### t_1 = x * m_n
-        # Ölniveau
-        ### t_oil = D_KRad / 2 - t
-        # Eintauchtiefe Rad2
-        ### t2 = D_KRad2 FIXME / 2 - t
-        # Eintauchfaktor Rad2
-        ### x2 = t2 / m_n2 FIXME #zw 2-10 * m_n2
     # end def __init__
+
+    def oil (self) :
+        """ Öltauchschmierung hier tatsächlich wichtig beide Großräder
+            zu beschreiben
+        """
+        g0 = self.gears [0]
+        g1 = self.gears [1]
+        t.append (g0.submersion_factor * g0.normalmodul)
+        # Ölniveau
+        t_oil = g0.D_K [1] / 2 - t [0]
+        # Eintauchtiefe Rad2
+        t.append (g1.D_K [1] / 2 - t_oil)
+        # Eintauchfaktor Rad2
+        submersion_factor_2 = t [1] / g1.normalmodul 
+        g1.submersion_factor = submersion_factor_2
+    # end def oil
+
+    def constrain_submersion_upper_bound (self) :
+        """ Submersion <= 10
+            Checked for <= 0
+        """
+        return self.gears [1].submersion_factor - 10
+    # end def constrain_submersion_upper_bound
+
+    def constrain_submersion_lower_bound (self) :
+        """ Submersion >= 2
+            Checked for <= 0
+        """
+        return 2 - self.gears [1].submersion_factor
+    # end def constrain_submersion_lower_bound
+
+    def constrain_v_0 (self) :
+        return self.gears [0].constrain_v ()
+    # end def constrain_v_0
+
+    def constrain_v_1 (self) :
+        return self.gears [1].constrain_v ()
+    # end def constrain_v_1
 
 # end class Gearbox
 
@@ -405,6 +522,8 @@ class Gear_Optimizer (pga.PGA, autosuper) :
         minmax.append ((8, 20))
         # Eintauchfaktor Rad1 x_1
         minmax.append ((2, 5))
+        # delta_b (should be minimized)
+        minmax.append ((0, 1000))
         d = dict \
             ( maximize             = False
             , num_eval             = 2
@@ -446,6 +565,7 @@ class Gear_Optimizer (pga.PGA, autosuper) :
             mat.append (stahl)
         beta  = self.get_allele (p, pop, 8)
         x_1   = self.get_allele (p, pop, 9)
+        delta_b = self.get_allele (p, pop, 10)
         g = Gearbox (mat, z, beta, x_1, n_ein = self.args.numerator)
         return g
     # end def phenotype

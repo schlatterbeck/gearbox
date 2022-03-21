@@ -28,7 +28,7 @@ class Inverse_Involute (autosuper) :
     max_degree = 45.0
 
     def __init__ (self) :
-        self.err_range = np.arange (0, self.max_degree, 0.03)
+        self.err_range = np.arange (0, self.max_degree, .0013)
     # end def __init__
 
     def plot_error (self, reference, absolute = False) :
@@ -38,13 +38,14 @@ class Inverse_Involute (autosuper) :
             invol = np.tan (b) - b
             ref = reference (invol)
             dif = self (invol) - ref
-            if absolute :
+            if absolute or ref == 0 :
                 y.append (dif)
             else :
                 y.append (dif / ref)
         fig = plt.figure ()
         ax  = fig.add_subplot (1, 1, 1)
         ax.plot (self.err_range, y)
+        ax.set_title (self.name + ' ref: ' + reference.name)
         plt.show ()
     # end def plot_error
 
@@ -89,12 +90,15 @@ class Inverse_Involute_Lookup (Inverse_Involute) :
     """ Perform linear interpolation of involute_table to
         reverse tan(x) - x to x
     """
+    name = 'Inverse Involute with lookup table'
 
     # Pre-computations for involute lookup version
-    istep     = 1000
-    maxangle  = 46 / 180 * np.pi
-    #x_table   = np.log (np.arange (0, maxangle, 1/istep)) + np.log (maxangle)
-    x_table   = np.arange (0, maxangle, 1/istep)
+    poly           = 12
+    istep          = 1000
+    maxangle       = 46 / 180 * np.pi
+    scaled_angle   = maxangle ** (1 / poly)
+    x_table        = (np.arange (0, scaled_angle, scaled_angle / istep))
+    x_table        = x_table ** poly
     involute_table = np.tan (x_table) - x_table
 
     def __call__ (self, x) :
@@ -120,6 +124,7 @@ class Inverse_Involute_Apsol4 (Inverse_Involute) :
         Note that this is accurate only to about 37°.
     """
     max_degree = 37.6
+    name = 'Inverse Involute Apsol4-Version'
     def __call__ (self, x) :
         x3 = x ** (1/3)
         return x3 / (0.69336473 + (-0.0000654976 + 0.1926063 * x3) * x3)
@@ -132,6 +137,7 @@ class Inverse_Involute_Apsol5 (Inverse_Involute) :
         It is slightly less accurate than Apsol4.
     """
     max_degree = 37.6
+    name = 'Inverse Involute Apsol5-Version'
     def __call__ (self, x) :
         x3 = x ** (1/3)
         return x3 / (0.693357 + 0.192848 * x3 * x3)

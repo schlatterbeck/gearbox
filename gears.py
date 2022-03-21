@@ -137,12 +137,98 @@ class Shaft :
     # end def add_input_gear
 # end class Shaft
 
-class Gear :
-
+class Zone_Factor (autosuper) :
     # Constants (for this project at least):
     alpha = np.pi * 20 / 180
     # Profilverschiebung (profile shift)
     profile_shift = [0, 0]
+
+    def __init__ (self, z, beta = 0, alpha = None) :
+        self.z    = np.array (z)
+        if alpha is not None :
+            self.alpha = alpha
+        self.set_beta (beta)
+    # end def __init__
+
+    @property
+    def profile_shift_normalized (self) :
+        """ This is the term (x1 + x2) / (z1 + z2) in computation of Z_H
+        """
+        return sum (self.profile_shift) / sum (self.z)
+    # end def profile_shift_normalized
+
+    def set_beta (self, beta) :
+        self.beta    = beta
+        self.alpha_t = atan (np.tan (self.alpha) / np.cos (beta))
+    # end def set_beta
+
+    def zone_factor (self, shift = None) :
+        """ Zone factor Z_H. This typically gets the transmission index
+            and computes all the other values from it.
+            Note that we use a efficient method for computing the
+            inverse of the involute. The largest angle we use is 37.43°
+        >>> for beta_deg in 0, 5, 10, 15, 25, 35, 40 :
+        ...     z  = Zone_Factor ([30, 30], beta_deg * np.pi / 180)
+        ...     zf = z.zone_factor
+        ...     print ("%.5f" % zf (shift = 0))
+        2.49457
+        2.48675
+        2.46337
+        2.42473
+        2.30385
+        2.13072
+        2.02782
+        >>> for shift in -0.02, 0.1 :
+        ...     z  = Zone_Factor ([30, 30], 30 * np.pi / 180)
+        ...     zf = z.zone_factor
+        ...     print ("%.5f" % zf (shift = shift))
+        2.66981
+        1.70126
+        """
+        if shift is None :
+            shift = self.profile_shift_normalized
+        beta_b  = atan (np.tan (self.beta) * np.cos (self.alpha_t))
+        if shift == 0 :
+            alpha_tw = self.alpha_t
+        else :
+            inv_alpha_tw = \
+                ( np.tan (self.alpha_t)
+                - self.alpha_t
+                + 2 * np.tan (self.alpha) * shift
+                )
+            alpha_tw = inv_involute (inv_alpha_tw)
+        return \
+            ( (1 / np.cos (self.alpha_t))
+            * np.sqrt (2 * np.cos (beta_b) / np.tan (alpha_tw))
+            )
+    # end def zone_factor
+
+    def plot_zone_factor (self) :
+        shifts = ( .1, .09, .08, .07, .06, .05, .04, .03, .025, .02, .015
+                 , .01, .005, 0.0, -.005, -.01, -.015, -.02
+                 )
+        x   = np.arange (0, 45, .01)
+        fig = plt.figure ()
+        ax  = fig.add_subplot (1, 1, 1)
+        ax.set_ylim ((1.5, 3.0))
+        ax.grid (True)
+        x_ticks = np.arange (0, 46, 5)
+        y_ticks = np.arange (1.5, 3.05, 0.1)
+        ax.set_xticks (x_ticks)
+        ax.set_yticks (y_ticks)
+        for shift in shifts :
+            y = []
+            for b in x :
+                br = b / 180 * np.pi
+                self.set_beta (br)
+                y.append (self.zone_factor (shift = shift))
+            ax.plot (x, y)
+        plt.show ()
+    # end def plot_zone_factor
+# end class Zone_Factor
+
+class Gear (Zone_Factor) :
+
     # Elastizitätsfaktor Stahl-Stahl TB21-21b
     Z_E = 189.8
     # Modul/Breitenverhältnis TB 21-13b
@@ -167,13 +253,12 @@ class Gear :
         ]
 
     # submersion depth factor 2..5 (sub_fac)
-    def __init__ (self, materials, z, beta, n_ein, shaft, sub_fac = None) :
+    def __init__ (self, materials, z, n_ein, shaft, sub_fac = None, **kw) :
+        self.__super.__init__ (z, **kw)
         self.materials = materials
-        self.z         = np.array (z)
         self.beta      = beta
         self.n_ein     = n_ein
         self.shaft     = shaft
-        self.alpha_t   = atan (np.tan (self.alpha) / np.cos (beta))
         if s_depth is not None :
             self.submersion_factor = sub_fac
         assert len (z) == 2
@@ -229,23 +314,16 @@ class Gear :
     # end def __init__
 
     @property
-    def profile_shift_normalized (self) :
-        """ This is the term (x1 + x2) / (z1 + z2) in computation of Z_H
-        """
-        return sum (self.profile_shift) / sum (self.z)
-    # end def profile_shift_normalized
-
-    @property
     def out_T_ges (self) :
         return self.T_ges * self.u_tat
     # end def out_T_ges
 
-    def profile_overlap (self, gearbox)
+    def profile_overlap (self, gearbox) :
         """ Profilüberdeckung
         """
         m_t = self.stirnmodul
         D_b = self.D_R * np.cos (self.alpha_t)
-        self.epsilon_alpha =
+        self.epsilon_alpha = \
             ( ( 0.5
               * ( np.sqrt (D_K [0] ** 2 - D_b [0] ** 2)
                 + np.sqrt (D_K [1] ** 2 - D_b [1] ** 2)
@@ -260,77 +338,6 @@ class Gear :
         # Sprungüberdeckung (nur für Schrägvz) >1
         ### epsilon_beta = b_Rad * np.sin (beta) / np.pi * m_n
     # end def profile_overlap (self)
-
-    def zone_factor (self, beta = None, shift = None) :
-        """ Zone factor Z_H. This typically gets the transmission index
-            and computes all the other values from it.
-            Note that we use a efficient method for computing the
-            inverse of the involute. The largest angle we use is 37.43°
-        >>> m  = Material ('S235JR', Material.HB, 'normal_annealed'
-        ...               , 120, 120, 125, 190, 315, 430, 1)
-        >>> s  = Shaft (1)
-        >>> g  = Gear ((m, m), (30, 30), 15, 1, s)
-        >>> zf = g.zone_factor
-        >>> print ("%.5f" % zf (beta = 0, shift = 0))
-        2.49457
-        >>> print ("%.5f" % zf (beta = 5 * np.pi / 180, shift = 0))
-        2.48675
-        >>> print ("%.5f" % zf (beta = 10 * np.pi / 180, shift = 0))
-        2.46337
-        >>> print ("%.5f" % zf (beta = 15 * np.pi / 180, shift = 0))
-        2.42473
-        >>> print ("%.5f" % zf (beta = 25 * np.pi / 180, shift = 0))
-        2.30385
-        >>> print ("%.5f" % zf (beta = 35 * np.pi / 180, shift = 0))
-        2.13072
-        >>> print ("%.5f" % zf (beta = 40 * np.pi / 180, shift = 0))
-        2.02782
-        >>> print ("%.5f" % zf (beta = 30 * np.pi / 180, shift = -0.02))
-        2.66981
-        >>> print ("%.5f" % zf (beta = 30 * np.pi / 180, shift = 0.1))
-        1.70126
-        """
-        if beta is None :
-            beta = self.beta
-        if shift is None :
-            shift = self.profile_shift_normalized
-        beta_b  = atan (np.tan (beta) * np.cos (self.alpha_t))
-        if shift == 0 :
-            alpha_tw = self.alpha_t
-        else :
-            inv_alpha_tw = \
-                ( np.tan (self.alpha_t)
-                - self.alpha_t
-                + 2 * np.tan (self.alpha) * shift
-                )
-            alpha_tw = inv_involute (inv_alpha_tw)
-        return \
-            ( (1 / np.cos (self.alpha_t))
-            * np.sqrt (2 * np.cos (beta_b) / np.tan (alpha_tw))
-            )
-    # end def zone_factor
-
-    def plot_zone_factor (self) :
-        shifts = ( .1, .09, .08, .07, .06, .05, .04, .03, .025, .02, .015
-                 , .01, .005, 0.0, -.005, -.01, -.015, -.02
-                 )
-        x   = np.arange (0, 45, .01)
-        fig = plt.figure ()
-        ax  = fig.add_subplot (1, 1, 1)
-        ax.set_ylim ((1.5, 3.0))
-        ax.grid (True)
-        x_ticks = np.arange (0, 46, 5)
-        y_ticks = np.arange (1.5, 3.05, 0.1)
-        ax.set_xticks (x_ticks)
-        ax.set_yticks (y_ticks)
-        for shift in shifts :
-            y = []
-            for b in x :
-                br = b / 180 * np.pi
-                y.append (self.zone_factor (beta = br, shift = shift))
-            ax.plot (x, y)
-        plt.show ()
-    # end def plot_zone_factor
 
     def constrain_v (self) :
         """ v must be less than a given number.
@@ -356,11 +363,11 @@ class Gearbox :
         T_ges = self.P * self.K_A / (2 * n * np.pi)
         s = self.shaft = []
         g = self.gears = []
-        self.shaft.append (Shaft (self, T_ges))
-        self.gears.append (Gear (materials [:2], z [:2], beta, n, s [-1]))
-        self.shaft.append (Shaft (self, g [-1].out_T_ges))
-        self.gears.append (Gear (materials [2:], z [2:], 0, n2, s [-1]))
-        self.shaft.append (Shaft (self, g [-1].out_T_ges))
+        s.append (Shaft (self, T_ges))
+        g.append (Gear  (materials [:2], z [:2], n, s [-1], beta = beta))
+        s.append (Shaft (self, g [-1].out_T_ges))
+        g.append (Gear  (materials [2:], z [2:], n2, s [-1], beta = 0))
+        s.append (Shaft (self, g [-1].out_T_ges))
 
         self.fac = (z [0] * z [2]) / (z [1] * z [3])
         self.delta_b = delta_b
@@ -626,10 +633,8 @@ if __name__ == '__main__' :
         )
     args = cmd.parse_args ()
     if args.plot_zone_factor :
-        m  = Material ('S235JR', Material.HB, 'normal_annealed'
-                      , 120, 120, 125, 190, 315, 430, 1)
-        g = Gear ([m, m], [30, 30], 15, 1)
-        g.plot_zone_factor ()
+        z = Zone_Factor ([30, 30])
+        z.plot_zone_factor ()
     elif args.check :
         go = Gear_Optimizer (args)
         z  = [int (i) for i in args.check.split (',')]

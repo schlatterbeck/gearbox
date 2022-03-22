@@ -115,14 +115,27 @@ class Shaft :
         # Bearings
         # FIXME
         gb = self.gearbox
-        # FIXME: This is different for each Shaft depending on
-        # input/output gear(s)
-        # Tangentiale Lagerkraft A, B
-        self.F_Bt = F_t * gb.l_A / gb.l_AB
-        self.F_At = F_t - F_Bt
-        # Normale Lagerkraft A, B
-        self.F_Bn = F_r * gb.l_A / gb.l_AB
-        self.F_An = F_r - F_Bn
+        if output_gear is None :
+            assert input_gear is not None
+            # Tangentiale Lagerkraft A, B
+            self.F_Bt = F_t * gb.l_A / gb.l_AB
+            self.F_At = F_t - F_Bt
+            # Normale Lagerkraft A, B
+            self.F_Bn = F_r * gb.l_A / gb.l_AB
+            self.F_An = F_r - F_Bn
+        elif input_gear is None :
+            assert output_gear is not None
+            #FIXME
+            self.F_Bt = F_t * gb.l_A / gb.l_AB
+            self.F_At = F_t - F_Bt
+            self.F_Bn = F_r * gb.l_A / gb.l_AB
+            self.F_An = F_r - F_Bn
+        else :
+            #FIXME
+            self.F_Bt = F_t * gb.l_A / gb.l_AB
+            self.F_At = F_t - F_Bt
+            self.F_Bn = F_r * gb.l_A / gb.l_AB
+            self.F_An = F_r - F_Bn
         # Radiale Lagerkraft A, B
         self.F_Br = np.sqrt (F_Bt ** 2 + F_Bn ** 2)
         self.F_Ar = np.sqrt (F_At ** 2 + F_An ** 2)

@@ -99,7 +99,7 @@ class Shaft :
         self.T_ges   = T_ges
     # end def __init__
 
-    def add_gears (input_gear = None, output_gear = None) :
+    def add_gears (self, input_gear = None, output_gear = None) :
         self.input_gear  = input_gear
         self.output_gear = output_gear
 
@@ -116,32 +116,49 @@ class Shaft :
         # FIXME
         gb = self.gearbox
         if output_gear is None :
+            # Shaft 0
             assert input_gear is not None
             # Tangentiale Lagerkraft A, B
-            self.F_Bt = F_t * gb.l_A / gb.l_AB
-            self.F_At = F_t - F_Bt
+            self.F_Bt = self.F_t * gb.l_A / gb.l_AB
+            self.F_At = self.F_t - self.F_Bt
             # Normale Lagerkraft A, B
-            self.F_Bn = F_r * gb.l_A / gb.l_AB
-            self.F_An = F_r - F_Bn
+            self.F_Bn = self.F_r * gb.l_A / gb.l_AB
+            self.F_An = self.F_r - self.F_Bn
+            # Axiale Lagerkraft A, B
+            #self.F_Ba = FIXME
+            #self.F_Aa = FIXME
         elif input_gear is None :
+            # Shaft 2
             assert output_gear is not None
-            #FIXME
-            self.F_Bt = F_t * gb.l_A / gb.l_AB
-            self.F_At = F_t - F_Bt
-            self.F_Bn = F_r * gb.l_A / gb.l_AB
-            self.F_An = F_r - F_Bn
+            F_t1 = output_gear.shaft.F_t
+            F_r1 = output_gear.shaft.F_r
+            # Tangentiale Lagerkraft A, B
+            self.F_Bt = F_t1 * (gb.l_AB - gb.l_B) / (gb.l_AB)
+            self.F_At = F_t1 - self.F_Bt
+            # Normale Lagerkraft A, B
+            self.F_Bn = F_r1 * (gb.l_AB - gb.l_B) / (gb.l_AB)
+            self.F_An = F_r1 - self.F_Bn
+            # Axiale Lagerkraft A, B
+            self.F_Ba = 0
+            self.F_Aa = 0
         else :
-            #FIXME
-            self.F_Bt = F_t * gb.l_A / gb.l_AB
-            self.F_At = F_t - F_Bt
-            self.F_Bn = F_r * gb.l_A / gb.l_AB
-            self.F_An = F_r - F_Bn
+            # Shaft 1
+            F_t0 = output_gear.shaft.F_t
+            F_r0 = output_gear.shaft.F_r
+            # Tangentiale Lagerkraft A, B
+            self.F_Bt = \
+                (F_t0 * gb.l_A + self.F_t * (gb.l_AB - gb.l_B)) / (gb.l_AB)
+            self.F_At = F_t0 + self.F_t - self.F_Bt
+            # Normale Lagerkraft A, B
+            self.F_Bn = \
+                (F_r0 * gb.l_A + self.F_r * (gb.l_AB - gb.l_B)) / (gb.l_AB)
+            self.F_An = F_r0 + self.F_r - self.F_Bn
+            # Axiale Lagerkraft A, B
+            #self.F_Ba = FIXME
+            #self.F_Aa = FIXME
         # Radiale Lagerkraft A, B
-        self.F_Br = np.sqrt (F_Bt ** 2 + F_Bn ** 2)
-        self.F_Ar = np.sqrt (F_At ** 2 + F_An ** 2)
-        # Axiale Lagerkraft A, B
-        #self.F_Ba = FIXME
-        #self.F_Aa = FIXME
+        self.F_Br = np.sqrt (self.F_Bt ** 2 + self.F_Bn ** 2)
+        self.F_Ar = np.sqrt (self.F_At ** 2 + self.F_An ** 2)
 
         #F_Bt = F_t * gb.l_A + F_t2 * (gb.l_AB - l_B2)
         #M_bmax = F_Br * gb.l_B
@@ -244,8 +261,6 @@ class Gear (Zone_Factor) :
 
     # Elastizitätsfaktor Stahl-Stahl TB21-21b
     Z_E = 189.8
-    # Modul/Breitenverhältnis TB 21-13b FIXME
-    psi_m = 20
     # Submersion depth default if unspecified in constructor
     # submersion depth factor 2..5
     submersion_factor = 2
@@ -266,13 +281,14 @@ class Gear (Zone_Factor) :
           7, 9, 11, 14, 18, 22, 28, 36, 45, 55, 70
         ]
 
-    def __init__ (self, gb, materials, z, n_ein, shaft, **kw) :
+    def __init__ (self, gb, materials, z, n_ein, shaft, psi_m, **kw) :
         self.__super.__init__ (z, **kw)
         #import pdb; pdb.set_trace ()
         self.gb        = gb
         self.materials = materials
         self.n_ein     = n_ein
         self.shaft     = shaft
+        self.psi_m     = psi_m
         self.mod_ovl   = 0
         assert len (z) == 2
         assert len (materials) == 2
@@ -285,10 +301,11 @@ class Gear (Zone_Factor) :
         # Betriebsmoment Eingangs-Welle
         self.T_ges = T_ges = self.shaft.T_ges
         # Stirnmodul Rad 1, Rad 2
+        # FIXME: Do we need the minimum here?
         self.psi_d_max = psi_d_max = max (m.psi_dlim () for m in materials)
         # T_ges is Nm -> convert to mm
         self.stirnmodul_calc = \
-            ( (2 * T_ges * 1.2e3) / ((sigma_Hlim / 1.4) ** 2)
+            ( (2 * T_ges * 1.2) / ((sigma_Hlim / 1.4) ** 2)
             * (u_tat + 1) / u_tat
             * (self.Z_E ** 2) * (Z_H ** 2)
             * 1 / (psi_d_max * self.z [0] ** 3)
@@ -396,11 +413,12 @@ class Gearbox :
     >>> beta = 18 * np.pi / 180
     >>> n  = 3510
     >>> delta_b = 0
-    >>> gb = Gearbox (m, z, beta, n, delta_b)
+    >>> psi_m = [20, 20]
+    >>> gb = Gearbox (m, z, beta, n, delta_b, psi_m)
     >>> g0 = gb.gears [0]
     >>> g1 = gb.gears [1]
     >>> print ("T_ges: %.4f" % g0.T_ges)
-    T_ges: 204.0448
+    T_ges: 204044.7988
     >>> print ("Z_H: %.4f" % g0.Z_H)
     Z_H: 2.3944
     >>> print ("sigma_Hlim: %.4f" % g0.sigma_Hlim)
@@ -433,7 +451,7 @@ class Gearbox :
     d_W: 38.5536
 
     >>> print ("T_ges: %.4f" % g1.T_ges)
-    T_ges: 955.7888
+    T_ges: 955788.7945
     >>> print ("Z_H: %.4f" % g1.Z_H)
     Z_H: 2.4946
     >>> print ("sigma_Hlim: %.4f" % g1.sigma_Hlim)
@@ -464,26 +482,118 @@ class Gearbox :
     d_RW: 100.9091
     >>> print ("d_W: %.4f" % g1.d_W)
     d_W: 61.6667
+
+    >>> print ("s_z: %.4f %.4f"  % tuple (gb.s_z))
+    s_z: 12.0000 18.0000
+    >>> print ("s_Wg: %.4f" % gb.s_Wg)
+    s_Wg: 8.0000
+    >>> print ("s_b: %.4f"  % gb.s_b)
+    s_b: 34.0000
+    >>> print ("s_d: %.4f"  % gb.s_d)
+    s_d: 12.0000
+    >>> print ("a: %.4f %.4f" % tuple (gb.a))
+    a: 227.1158 291.0000
+    >>> print ("l_Gi: %.4f" % gb.l_Gi)
+    l_Gi: 826.0714
+    >>> print ("l_12: %.4f" % gb.l_12)
+    l_12: 117.0000
+    >>> print ("l_0G: %.4f" % gb.l_0G)
+    l_0G: 52.0000
+    >>> print ("l_1G: %.4f" % gb.l_1G)
+    l_1G: 78.0000
+    >>> print ("b_Gi: %.4f" % gb.b_Gi)
+    b_Gi: 247.0000
+    >>> print ("l_GL: %.4f" % gb.l_GL)
+    l_GL: 25.0000
+    >>> print ("l_A: %.4f" % gb.l_A)
+    l_A: 77.0000
+    >>> print ("l_B: %.4f" % gb.l_B)
+    l_B: 103.0000
+    >>> print ("l_AB: %.4f" % gb.l_AB)
+    l_AB: 297.0000
+
+    >>> print ("F_t: %.4f"    % gb.shaft [0].F_t)
+    F_t: 5106.7930
+    >>> print ("F_r: %.4f"    % gb.shaft [0].F_r)
+    F_r: 1954.3746
+    >>> print ("F_Br: %.4f"   % gb.shaft [0].F_Br)
+    F_Br: 1417.6270
+    >>> print ("F_Bt: %.4f"   % gb.shaft [0].F_Bt)
+    F_Bt: 1323.9834
+    >>> print ("F_Ar: %.4f"   % gb.shaft [0].F_Ar)
+    F_Ar: 4050.3630
+    >>> print ("F_At: %.4f"   % gb.shaft [0].F_At)
+    F_At: 3782.8097
+    >>> print ("F_Ba: %.4f"   % gb.shaft [0].F_Ba)
+    >>> print ("F_Aa: %.4f"   % gb.shaft [0].F_Aa)
+    >>> print ("M_bmax: %.4f" % gb.shaft [0].M_bmax)
+    >>> print ("M_v: %.4f"    % gb.shaft [0].M_v)
+
+    >>> print ("F_t: %.4f"    % gb.shaft [1].F_t)
+    F_t: 15171.2507
+    >>> print ("F_r: %.4f"    % gb.shaft [1].F_r)
+    F_r: 5521.8837
+    >>> print ("F_Br: %.4f"   % gb.shaft [1].F_Br)
+    F_Br: 11963.2902
+    >>> print ("F_Bt: %.4f"   % gb.shaft [1].F_Bt)
+    F_Bt: 11233.8239
+    >>> print ("F_Ar: %.4f"   % gb.shaft [1].F_Ar)
+    F_Ar: 9649.1212
+    >>> print ("F_At: %.4f"   % gb.shaft [1].F_At)
+    F_At: 9044.2198
+    >>> print ("F_Ba: %.4f"   % gb.shaft [1].F_Ba)
+    >>> print ("F_Aa: %.4f"   % gb.shaft [1].F_Aa)
+    >>> print ("M_bmax: %.4f" % gb.shaft [1].M_bmax)
+    >>> print ("M_v: %.4f"    % gb.shaft [1].M_v)
+
+    >>> print ("F_t: %.4f"    % gb.shaft [2].F_t)
+    F_t: 54905.4787
+    >>> print ("F_r: %.4f"    % gb.shaft [2].F_r)
+    F_r: 19983.9600
+    >>> print ("F_Br: %.4f"   % gb.shaft [2].F_Br)
+    F_Br: 10545.8320
+    >>> print ("F_Bt: %.4f"   % gb.shaft [2].F_Bt)
+    F_Bt: 9909.8405
+    >>> print ("F_Ar: %.4f"   % gb.shaft [2].F_Ar)
+    F_Ar: 5599.0758
+    >>> print ("F_At: %.4f"   % gb.shaft [2].F_At)
+    F_At: 5261.4102
+    >>> print ("F_Ba: %.4f"   % gb.shaft [2].F_Ba)
+    F_Ba: 0.0000
+    >>> print ("F_Aa: %.4f"   % gb.shaft [2].F_Aa)
+    F_Aa: 0.0000
+    >>> print ("M_bmax: %.4f" % gb.shaft [2].M_bmax)
+    M_bmax: 1086
+    >>> print ("M_v: %.4f"    % gb.shaft [2].M_v)
+    M_v: 2362
+    >>> print ("T_ges: %.4f" % gb.shaft [2].T_ges)
+    T_ges: 3459045.1612
     """
     # Anwendungsfaktor K_A
     K_A = 1.5
     # Leistung P
     P   = 50e3
 
-    def __init__ (self, materials, z, beta, n, delta_b) :
+    def __init__ (self, materials, z, beta, n, delta_b, psi_m) :
         """ Note that n is minutes^-1
         """
         assert len (z) == 4
         assert len (materials) == 4
         n2 = n * z [0] / z [1]
         # Betriebsmoment (minutes not seconds)
-        T_ges = self.P * self.K_A / (2 * n * np.pi) * 60
+        T_ges = self.P * self.K_A / (2 * n * np.pi) * 60 * 1000
         s = self.shaft = []
         g = self.gears = []
         s.append (Shaft (self, T_ges))
-        g.append (Gear  (self, materials [:2], z [:2], n, s [-1], beta = beta))
+        g.append \
+            ( Gear
+                ( self, materials [:2], z [:2]
+                , n, s [-1], beta = beta, psi_m = psi_m [0]
+                )
+            )
         s.append (Shaft (self, g [-1].out_T_ges))
-        g.append (Gear  (self, materials [2:], z [2:], n2, s [-1]))
+        g.append \
+            (Gear (self, materials [2:], z [2:], n2, s [-1], psi_m = psi_m [1]))
         s.append (Shaft (self, g [-1].out_T_ges))
 
         self.factor = (z [0] * z [2]) / (z [1] * z [3])
@@ -491,29 +601,34 @@ class Gearbox :
 
         g = self.gears
         # Distance of box to first wheel
-        s_z = [3 * x.normalmodul for x in g]
+        self.s_z = s_z = [3 * x.normalmodul for x in g]
         # Wandstärke Gehäuse (s_12)
-        s_Wg = 8 # FIXME from table GJS RM S.785/20.6
+        self.s_Wg = s_Wg = 8 # FIXME from table GJS RM S.785/20.6
         # Flanschbreite
-        s_b = 3 * s_Wg + 10
+        self.s_b = s_b = 3 * s_Wg + 10
         # Flanschdicke
-        s_d = 1.5 * s_Wg
+        self.s_d = s_d = 1.5 * s_Wg
         # Gehäuse Innenlänge
-        a = self.a = np.array ([sum (x.D_K) / 2 for x in g])
-        l_Gi = ( sum (a)
-               + (g [0].D_K [0] + g [1].D_K [1]) / 2
-               + sum (s_z)
-               )
+        self.a = a = np.array ([sum (x.D_R) / 2 for x in g])
+        self.l_Gi = l_Gi = \
+            ( sum (a)
+            + (g [0].D_K [0] + g [1].D_K [1]) / 2
+            + sum (s_z)
+            )
         # Gehäuse Innenbreite
-        l_12 = ((g [0].b - 2) + (g [1].b)) / 2 + s_z [1]
-        l_0G = g [0].b / 2 + s_z [0]
-        l_1G = g [1].b / 2 + s_z [1]
-        b_Gi = l_12 + l_0G + l_1G
+        self.l_12 = l_12 = ((g [0].b - 2) + (g [1].b)) / 2 + s_z [1]
+        self.l_0G = l_0G = g [0].b / 2 + s_z [0]
+        self.l_1G = l_1G = g [1].b / 2 + s_z [1]
+        self.b_Gi = b_Gi = l_12 + l_0G + l_1G
 
-        l_GL = delta_b + s_Wg + g [0].b / 2
-        l_A  = l_GL + l_0G
-        l_B  = l_GL + l_1G
-        l_AB = l_A  + l_B + l_12
+        self.l_GL = l_GL = delta_b + s_Wg + s_b / 2
+        self.l_A  = l_A  = l_GL + l_0G
+        self.l_B  = l_B  = l_GL + l_1G
+        self.l_AB = l_AB = l_A  + l_B + l_12
+
+        s [0].add_gears (input_gear  = g [0])
+        s [1].add_gears (output_gear = g [0], input_gear = g [1])
+        s [2].add_gears (output_gear = g [1])
 
         for g in self.gears :
             g.profile_overlap ()
@@ -651,6 +766,9 @@ class Gear_Optimizer (pga.PGA, autosuper) :
         minmax.append ((2, 5))
         # delta_b (should be minimized)
         minmax.append ((0, 1000))
+        # Modul/Breitenverhältnis TB 21-13b psi_m for each gear
+        minmax.append ((20, 35))
+        minmax.append ((20, 35))
         # Compute number of constraint-methods in Gearbox
         num_constraint = 2
         self.constraints = []
@@ -698,10 +816,11 @@ class Gear_Optimizer (pga.PGA, autosuper) :
                 stahl = len (self.materials) - 1
             stahl = self.materials [stahl]
             mat.append (stahl)
-        beta  = self.get_allele (p, pop, 8) * np.pi / 180
-        x_1   = self.get_allele (p, pop, 9)
+        beta    = self.get_allele (p, pop, 8) * np.pi / 180
+        x_1     = self.get_allele (p, pop, 9)
         delta_b = self.get_allele (p, pop, 10)
-        g = Gearbox (mat, z, beta, self.args.numerator, delta_b)
+        psi_m   = [self.get_allele (p, pop, x) for x in (11, 12)]
+        g = Gearbox (mat, z, beta, self.args.numerator, delta_b, psi_m)
         return g
     # end def phenotype
 

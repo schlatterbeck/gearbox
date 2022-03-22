@@ -419,6 +419,39 @@ class Gearbox :
     >>> print ("d_W: %.4f" % g0.d_W)
     d_W: -5.0491
 
+    >>> print ("T_ges: %.4f" % g1.T_ges)
+    T_ges: 204.0448
+    >>> print ("Z_H: %.4f" % g1.Z_H)
+    Z_H: 2.4946
+    >>> print ("sigma_Hlim: %.4f" % g1.sigma_Hlim)
+    sigma_Hlim: 777.5000
+    >>> print ("u_tat: %.4f" % g1.u_tat)
+    u_tat: 3.6190
+    >>> print ("psi_d_max: %.4f" % g1.psi_d_max)
+    psi_d_max: 1.1000
+    >>> print ("m_tcalc: %.4f" % g1.stirnmodul_calc)
+    m_tcalc: 5.9334
+    >>> print ("m_ncalc: %.4f" % g1.normalmodul_calc)
+    m_ncalc: 5.9334
+    >>> print ("m_t: %.4f" % g1.stirnmodul)
+    m_t: 6.0000
+    >>> print ("m_n: %.4f" % g1.normalmodul)
+    m_n: 6.0000
+    >>> print ("D_R: %.4f %.4f" % tuple (g1.D_R))
+    D_R: 6.0590 12.1179
+    >>> print ("D_K: %.4f %.4f" % tuple (g1.D_K))
+    D_K: 18.0590 24.1179
+    >>> print ("b: %.4f" % g1.b)
+    b: 150.0000
+    >>> print ("psi_d: %.4f %.4f" % tuple (g1.psi_d))
+    psi_d: 24.7567 12.3784
+    >>> print ("v: %.4f" % g1.v)
+    v: 133624.3051
+    >>> print ("d_RW: %.4f" % g1.d_RW)
+    d_RW: -8.2622
+    >>> print ("d_W: %.4f" % g1.d_W)
+    d_W: -5.0491
+
     """
     # Anwendungsfaktor K_A
     K_A = 1.5

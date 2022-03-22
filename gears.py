@@ -596,7 +596,7 @@ class Gearbox :
             (Gear (self, materials [2:], z [2:], n2, s [-1], psi_m = psi_m [1]))
         s.append (Shaft (self, g [-1].out_T_ges))
 
-        self.factor = (z [0] * z [2]) / (z [1] * z [3])
+        self.factor = (z [1] * z [3]) / (z [0] * z [2])
         self.delta_b = delta_b
 
         g = self.gears
@@ -801,8 +801,8 @@ class Gear_Optimizer (pga.PGA, autosuper) :
     # end def __init__
 
     def err (self, *z) :
-        f = 1 / self.factor
-        return abs (f - (z [0] * z [2]) / (z [1] * z [3])) / f * 100
+        f = self.factor
+        return abs (f - (z [1] * z [3]) / (z [0] * z [2])) / f * 100
     # end def err
 
     def phenotype (self, p, pop) :
@@ -831,7 +831,7 @@ class Gear_Optimizer (pga.PGA, autosuper) :
         z.extend (g [0].z)
         z.extend (g [1].z)
         gc   = gcd (* z [:2]) + gcd (*z [2:])
-        ferr = (1 / self.factor - gb.factor) ** 2
+        ferr = (self.factor - gb.factor) ** 2
         ret  = [ferr, self.err (*z) - 1, gc - 2]
         for n in self.constraints :
             m = getattr (gb, n)

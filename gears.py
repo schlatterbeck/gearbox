@@ -231,8 +231,8 @@ class Gear (Zone_Factor) :
 
     # Elastizitätsfaktor Stahl-Stahl TB21-21b
     Z_E = 189.8
-    # Modul/Breitenverhältnis TB 21-13b
-    psi_m = 25
+    # Modul/Breitenverhältnis TB 21-13b FIXME
+    psi_m = 20
     # Submersion depth default if unspecified in constructor
     # submersion depth factor 2..5
     submersion_factor = 2
@@ -322,8 +322,8 @@ class Gear (Zone_Factor) :
         # check breite
         self.psi_d = b / self.D_R # <= psi_dlim
 
-        # v out
-        self.v = self.D_R [1] * n_ein * np.pi
+        # v out in m/s, note that n_ein is per *minute*
+        self.v = self.D_R [0] * n_ein * np.pi / 1000 / 60
 
         # d_RW gibt maximalen durchmesser Ritzelwelle
         m_n = self.normalmodul
@@ -405,22 +405,22 @@ class Gearbox :
     >>> print ("m_n: %.4f" % g0.normalmodul)
     m_n: 4.0000
     >>> print ("D_R: %.4f %.4f" % tuple (g0.D_R))
-    D_R: 6.0590 12.1179
+    D_R: 79.9111 374.3206
     >>> print ("D_K: %.4f %.4f" % tuple (g0.D_K))
-    D_K: 18.0590 24.1179
+    D_K: 87.9111 382.3206
     >>> print ("b: %.4f" % g0.b)
-    b: 150.0000
+    b: 80.0000
     >>> print ("psi_d: %.4f %.4f" % tuple (g0.psi_d))
-    psi_d: 24.7567 12.3784
+    psi_d: 1.0011 0.2137
     >>> print ("v: %.4f" % g0.v)
-    v: 133624.3051
+    v: 14.6863
     >>> print ("d_RW: %.4f" % g0.d_RW)
-    d_RW: -8.2622
+    d_RW: 63.0877
     >>> print ("d_W: %.4f" % g0.d_W)
-    d_W: -5.0491
+    d_W: 38.5536
 
     >>> print ("T_ges: %.4f" % g1.T_ges)
-    T_ges: 204.0448
+    T_ges: 955.7888
     >>> print ("Z_H: %.4f" % g1.Z_H)
     Z_H: 2.4946
     >>> print ("sigma_Hlim: %.4f" % g1.sigma_Hlim)
@@ -438,20 +438,19 @@ class Gearbox :
     >>> print ("m_n: %.4f" % g1.normalmodul)
     m_n: 6.0000
     >>> print ("D_R: %.4f %.4f" % tuple (g1.D_R))
-    D_R: 6.0590 12.1179
+    D_R: 126.0000 456.0000
     >>> print ("D_K: %.4f %.4f" % tuple (g1.D_K))
-    D_K: 18.0590 24.1179
+    D_K: 138.0000 468.0000
     >>> print ("b: %.4f" % g1.b)
-    b: 150.0000
+    b: 120.0000
     >>> print ("psi_d: %.4f %.4f" % tuple (g1.psi_d))
-    psi_d: 24.7567 12.3784
+    psi_d: 0.9524 0.2632
     >>> print ("v: %.4f" % g1.v)
-    v: 133624.3051
+    v: 4.9436
     >>> print ("d_RW: %.4f" % g1.d_RW)
-    d_RW: -8.2622
+    d_RW: 100.9091
     >>> print ("d_W: %.4f" % g1.d_W)
-    d_W: -5.0491
-
+    d_W: 61.6667
     """
     # Anwendungsfaktor K_A
     K_A = 1.5
@@ -671,7 +670,7 @@ class Gear_Optimizer (pga.PGA, autosuper) :
     # end def __init__
 
     def err (self, *z) :
-        f = self.factor
+        f = 1 / self.factor
         return abs (f - (z [0] * z [2]) / (z [1] * z [3])) / f * 100
     # end def err
 
@@ -700,7 +699,7 @@ class Gear_Optimizer (pga.PGA, autosuper) :
         z.extend (g [0].z)
         z.extend (g [1].z)
         gc   = gcd (* z [:2]) + gcd (*z [2:])
-        ferr = (self.factor - gb.factor) ** 2
+        ferr = (1 / self.factor - gb.factor) ** 2
         ret  = [ferr, self.err (*z) - 1, gc - 2]
         for n in self.constraints :
             m = getattr (gb, n)

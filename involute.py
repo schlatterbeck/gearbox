@@ -58,13 +58,13 @@ class Inverse_Involute_Liu (Inverse_Involute) :
     """
     name = 'Inverse Involute Liu'
     def __call__ (self, x) :
+        if x == 0 :
+            return 0
         x3 = x  ** (1/3)
-        x8 = x3 ** 8
+        x8 = x  ** (8/5)
         k3 = 3  ** (1/3)
-        return acos \
-            ( np.sin (atan (k3 * x3 + 3/5 * x + (1/11 * x8)))
-            / (x + atan (k3 * x3 + 3/5 * x + 1/11 * x8))
-            )
+        a  = atan (k3 * x3 + 3/5 * x + 1/11 * x8)
+        return acos (np.sin (a) / (x + a))
     # end def __call__
 # end class Inverse_Involute_Liu
 
@@ -124,7 +124,7 @@ class Inverse_Involute_Apsol4 (Inverse_Involute) :
         Note that this is accurate only to about 37°.
     """
     max_degree = 37.6
-    name = 'Inverse Involute Apsol4-Version'
+    name = 'Inverse Involute Apsol4'
     def __call__ (self, x) :
         x3 = x ** (1/3)
         return x3 / (0.69336473 + (-0.0000654976 + 0.1926063 * x3) * x3)
@@ -137,7 +137,7 @@ class Inverse_Involute_Apsol5 (Inverse_Involute) :
         It is slightly less accurate than Apsol4.
     """
     max_degree = 37.6
-    name = 'Inverse Involute Apsol5-Version'
+    name = 'Inverse Involute Apsol5'
     def __call__ (self, x) :
         x3 = x ** (1/3)
         return x3 / (0.693357 + 0.192848 * x3 * x3)
@@ -163,7 +163,7 @@ if __name__ == '__main__' :
         ( '--error-reference'
         , help    = "Error reference can be one of 'liu' or 'cheng', "
                     "default=%(default)s"
-        , default = "cheng"
+        , default = "liu"
         )
     cmd.add_argument \
         ( '--test-implementation'

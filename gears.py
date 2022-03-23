@@ -115,6 +115,7 @@ class Shaft :
         # Bearings
         # FIXME
         gb = self.gearbox
+
         if output_gear is None :
             # Shaft 0
             assert input_gear is not None
@@ -160,10 +161,19 @@ class Shaft :
         self.F_Br = np.sqrt (self.F_Bt ** 2 + self.F_Bn ** 2)
         self.F_Ar = np.sqrt (self.F_At ** 2 + self.F_An ** 2)
 
-        #F_Bt = F_t * gb.l_A + F_t2 * (gb.l_AB - l_B2)
-        #M_bmax = F_Br * gb.l_B
-        #M_v = np.sqrt (M_bmax ** 2 + 0.75 * (0.7 * T_ges) ** 2)
-
+        if output_gear is None :
+            # Maximales Biegemoment
+            self.M_bmax = self.F_Ar * gb.l_A / 1e3
+            # Vergleichsmoment
+        elif input_gear is None :
+            self.M_bmax = self.F_Ar * (gb.l_AB - gb.l_B) / 1e3
+        else :
+            M_bz3 = self.F_Ar * gb.l_A / 1e3
+            M_bz2 = self.F_Br * gb.l_B / 1e3
+            # Maximales Biegemoment
+            self.M_bmax = max (M_bz2, M_bz3)
+        self.M_v = np.sqrt \
+            (self.M_bmax ** 2 + .75 * (.7 * self.T_ges / 1e3) ** 2)
     # end def add_input_gear
 # end class Shaft
 
@@ -524,10 +534,13 @@ class Gearbox :
     F_Ar: 4050.3630
     >>> print ("F_At: %.4f"   % gb.shaft [0].F_At)
     F_At: 3782.8097
-    >>> print ("F_Ba: %.4f"   % gb.shaft [0].F_Ba)
-    >>> print ("F_Aa: %.4f"   % gb.shaft [0].F_Aa)
+
+    #>>> print ("F_Ba: %.4f"   % gb.shaft [0].F_Ba)
+    #>>> print ("F_Aa: %.4f"   % gb.shaft [0].F_Aa)
     >>> print ("M_bmax: %.4f" % gb.shaft [0].M_bmax)
+    M_bmax: 311.8780
     >>> print ("M_v: %.4f"    % gb.shaft [0].M_v)
+    M_v: 335.5122
 
     >>> print ("F_t: %.4f"    % gb.shaft [1].F_t)
     F_t: 15171.2507
@@ -541,10 +554,13 @@ class Gearbox :
     F_Ar: 9649.1212
     >>> print ("F_At: %.4f"   % gb.shaft [1].F_At)
     F_At: 9044.2198
-    >>> print ("F_Ba: %.4f"   % gb.shaft [1].F_Ba)
-    >>> print ("F_Aa: %.4f"   % gb.shaft [1].F_Aa)
+
+    #>>> print ("F_Ba: %.4f"   % gb.shaft [1].F_Ba)
+    #>>> print ("F_Aa: %.4f"   % gb.shaft [1].F_Aa)
     >>> print ("M_bmax: %.4f" % gb.shaft [1].M_bmax)
+    M_bmax: 1232.2189
     >>> print ("M_v: %.4f"    % gb.shaft [1].M_v)
+    M_v: 1361.6484
 
     >>> print ("F_t: %.4f"    % gb.shaft [2].F_t)
     F_t: 54905.4787
@@ -563,9 +579,9 @@ class Gearbox :
     >>> print ("F_Aa: %.4f"   % gb.shaft [2].F_Aa)
     F_Aa: 0.0000
     >>> print ("M_bmax: %.4f" % gb.shaft [2].M_bmax)
-    M_bmax: 1086
+    M_bmax: 1086.2207
     >>> print ("M_v: %.4f"    % gb.shaft [2].M_v)
-    M_v: 2362
+    M_v: 2361.5695
     >>> print ("T_ges: %.4f" % gb.shaft [2].T_ges)
     T_ges: 3459045.1612
     """

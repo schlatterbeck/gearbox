@@ -60,7 +60,8 @@ def yfa (x, a, b, c, d, e) :
     #return a ** (x * b) + c * np.log (x * d) + e
     #return a * x ** 3 + b * x ** 2 + c * x + d
     #return a ** (x * b) + c * np.log (x) -d
-    return a * x ** 2 + b * x + c
+    #return a * x ** 2 + b * x + c
+    return a * x ** 2 + b * (1/x) + c
 
 def ysa (x, a, b, c) :
     #return a * x ** 2 + b * x + c

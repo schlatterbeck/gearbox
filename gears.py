@@ -355,6 +355,10 @@ class Gear (Zone_Factor) :
             nm_II = None
         self.D_R = self.z * self.stirnmodul
         self.D_K = self.D_R + 2 * self.normalmodul
+        # Kopfspiel
+        c_K      = 0.25 * self.normalmodul
+        h_f      = self.normalmodul + c_K
+        self.D_F = self.D_R - 2 * h_f
         # Durchmesser/Breitenverhältnis
         self.b = b = self.psi_m * self.normalmodul
         # z1 must be 2mm smaller than z0
@@ -396,6 +400,144 @@ class Gear (Zone_Factor) :
         m_n = self.normalmodul
         self.epsilon_beta = self.b_rad * np.sin (self.beta) / (np.pi * m_n)
     # end def profile_overlap
+
+    def fixme (self) :
+        """ Zahnfussfestigkeit
+        """
+        # FIXME: put in regression-test, which Shaft?
+        self.F_tbase = F_tbase = self.shaft.F_t / self.gb.K_A
+        m_n      = self.normalmodul
+        Y_X      = 1 # FIXME S. 1317 (323-4) TB 21-20d
+        K_Ft     = self.shaft.F_t / self.b_rad
+        # S. 1310 (316) TB 21.14
+        K_1      = 8.5
+        K_2      = 0.0087
+        K_3      = \
+            ( 0.01 * self.z [0] * self.v
+            * sqrt (self.u_tat ** 2 / (1 + self.u_tat) ** 2)
+            )
+        K_v      = 1 + (K_1 / K_Ft + K_2) * K_3
+        # S. 1313 (319) TB 21.17
+        y_beta   = [9.0, 12.5] # µm FIXME: Linear interpolation from table
+        c        = 1.0 # FIXME: Check
+        f_Hbeta  = 10 # µm FIXME S. 1313 (319) TB 21:16c
+        f_ma     = c * f_Hbeta
+        f_sh     = 7 # 40 < Breite < 100, F_t/b > 200  S. 1312 (318) TB 21:16a
+        F_betax  = f_ma + 1.33 * f_sh
+        K_Fm     = K_v * K_Ft
+        F_betay  = F_betax - y_beta
+        K_Hbeta1 = 1 + 10 * F_betay / K_Fm
+        K_Hbeta2 = 2 * np.sqrt (10 * F_betay / K_Fm)
+        K_Hbeta  = K_Hbeta1 if K_Hbeta1 <= 2 else K_Hbeta2
+        h        = (self.D_K - self.D_F) / 2
+        K_bh     = self.b_rad / h
+        N_F      = K_bh ** 2 / (1 + K_bh + K_bh ** 2)
+        K_Fbeta  = K_Hbeta ** N_F
+        K_Fges   = self.K_A * K_v * self.epsilon_alphan * K_Fbeta
+        b        = np.array ([self.b, self.b_rad])
+        # Y_beta holds for beta < 30°
+        Y_beta   = 1 - self.epsilon_beta * self.beta / (120 * np.pi / 180)
+        # Y_Fa:  S. 1316 (322) TB 21-19a
+        Y_Fa     = np.array ([2.96, 2.22])
+        Y_Fa     = np.array ([2.87, 2.25])
+        # Y_Sa:  S. 1316 (322) TB 21-19b
+        Y_Sa     = np.array ([1.58, 1.92])
+        self.Y_Sa = Y_Sa = np.array ([1.61, 1.885])
+        Y_eps    = 0.25 + 0.75 / self.epsilon_alphan
+        sigma_F0 = F_tbase / (b * m_n) * Y_Fa * Y_Sa * Y_eps * Y_beta
+        self.sigma_FE = sigma_FE = np.array \
+            ([m.sigma_f_lim for m in self.material])
+        sigma_FP = sigma_FE * self.gb.Y_NT * Y_X
+        self.sigma_F = sigma_F = sigma_F0 * K_Fges
+        # When computing for z0: f(z0), for z1: f(z1)
+        self.S_F = S_F = sigma_FP / sigma_F
+    # end def
+
+    def fixme2 (self) :
+        """ Verhältnis Breite/Höhe
+        """
+        pass
+    # end def
+
+    def hertz_pressure (self) :
+        """ Hertzsche Pressung
+        """
+        Z_beta   = np.sqrt (np.cos (self.beta))
+        Z_eps1   = np.sqrt ( (4 - self.epsilon_alpha) / 3
+                           * (1 - self.epsilon_beta)
+                           * self.epsilon_beta / self.epsilon_alpha
+                           )
+        Z_eps2   = np.sqrt (1 / self.epsilon_alpha)
+        Z_eps    = Z_eps1 if Z_eps1 < 1 else Z_eps2
+        Z_H      = np.sqrt ( 2 * np.cos (self.beta)
+                           / ( np.cos (self.alpha_t) ** 2
+                             * np.tan (self.alpha_t)
+                             )
+                           )
+        sigma_H0 = \
+            ( self.Z_E * Z_H * Z_eps * Z_beta
+            * np.sqrt ( self.F_tbase
+                      / (self.b_rad * self.D_R [0])
+                      * (self.u_tat + 1) / self.u_tat
+                      )
+            )
+        Z_NT     = 1    # FIXME
+        Z_X      = 1    # FIXME
+        Z_W      = 1.09 # FIXME
+        Z_LVR    = 0.92 # FIXME
+        sigma_HP = np.array ([m.sigma_h_lim for m in self.material]) \
+                   * Z_NT * Z_X * Z_W * Z_LVR
+        K_H      = np.sqrt (self.K_A * K_v * self.epsilon_alphan)
+        sigma_H  = sigma_H0 * K_H
+        self.S_H = sigma_HP / sigma_H
+    # end def hertz_pressure
+
+    def gewaltbruchsicherheit (self) :
+        Y_S = self.Y_Sa * (0.6 + 0.4 * self.epsilon_alphan)
+        Y_deltarel_Tstat = 0.2 + 0.4 * Y_S
+        sigma_FGstat = self.sigma_FE * Y_deltarel_Tstat * self.gb.Y_NT
+        self.S_G = S_G = sigma_FGstat / self.sigma_F
+    # end def gewaltbruchsicherheit
+
+    def constrain_S_G_0 (self) :
+        return 2 - self.S_G [0]
+    # end def constrain_S_G_0
+
+    def constrain_S_G_1 (self) :
+        return 2 - self.S_G [1]
+    # end def constrain_S_G_1
+
+    def constrain_S_H_min_0 (self) :
+        return 1 - self.S_H [0]
+    # end def constrain_S_H_min_0
+
+    def constrain_S_H_min_1 (self) :
+        return 1 - self.S_H [1]
+    # end def constrain_S_H_min_1
+
+    def constrain_S_H_max_0 (self) :
+        return self.S_H [0] - 1.3
+    # end def constrain_S_H_max_0
+
+    def constrain_S_H_max_1 (self) :
+        return self.S_H [1] - 1.3
+    # end def constrain_S_H_max_1
+
+    def constrain_S_F_min_0 (self) :
+        return 1.4 - self.S_F [0]
+    # end def constrain_S_H_min_0
+
+    def constrain_S_F_min_1 (self) :
+        return 1.4 - self.S_F [1]
+    # end def constrain_S_H_min_1
+
+    def constrain_S_F_max_0 (self) :
+        return self.S_F [0] - 1.7
+    # end def constrain_S_H_max_0
+
+    def constrain_S_F_max_1 (self) :
+        return self.S_F [1] - 1.7
+    # end def constrain_S_H_max_1
 
     def constrain_v (self) :
         """ v must be less than a given number.
@@ -612,9 +754,11 @@ class Gearbox :
     T_ges: 3459045.1612
     """
     # Anwendungsfaktor K_A
-    K_A = 1.5
+    K_A  = 1.5
     # Leistung P
-    P   = 50e3
+    P    = 50e3
+    # Lebensdauerfaktor
+    Y_NT = 1.0
 
     def __init__ (self, materials, z, beta, n, delta_b, psi_m) :
         """ Note that n is minutes^-1

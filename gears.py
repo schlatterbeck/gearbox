@@ -359,18 +359,21 @@ class Gear (Zone_Factor) :
         self.D_K = self.D_R + 2 * self.normalmodul
         # Durchmesser/Breitenverhältnis
         self.b = b = self.psi_m * self.normalmodul
+        # z1 must be 2mm smaller than z0
+        self.b_rad = b - 2
         # check breite
         self.psi_d = b / self.D_R # <= psi_dlim
 
         # v out in m/s, note that n_ein is per *minute*
         self.v = self.D_R [0] * n_ein * np.pi / 1000 / 60
 
-        # d_RW gibt maximalen durchmesser Ritzelwelle
+        # d_RW gibt maximalen Durchmesser Ritzelwelle
         m_n = self.normalmodul
         self.d_RW = m_n * (z [0] - 2.5) / (1.1 * np.cos (self.beta))
         # d_W gibt maximalen Durchmesser Welle mit aufgestecktem Ritzel
         self.d_W  = m_n * (z [0] - 2.5) / (1.8 * np.cos (self.beta))
-
+        # Gehäuse Innenlänge
+        self.a = sum (self.D_R) / 2
     # end def __init__
 
     @property
@@ -389,14 +392,15 @@ class Gear (Zone_Factor) :
                 + np.sqrt (self.D_K [1] ** 2 - D_b [1] ** 2)
                 )
               )
-            - self.gb.a * np.sin (self.alpha_t)
+            - self.a * np.sin (self.alpha_t)
             ) / (np.pi * m_t * np.cos (self.alpha_t))
+        self.epsilon_alphan = self.epsilon_alpha / np.cos (self.beta) ** 2
+        m_n = self.normalmodul
+        self.epsilon_beta = self.b_rad * np.sin (self.beta) / (np.pi * m_n)
 
         # FIXME
         # Normal-Profilüberdeckung zwischen [1.1,1.25]
-        ### epsilon_alphan = epsilon_alpha / np.cos (beta) ** 2
         # Sprungüberdeckung (nur für Schrägvz) >1
-        ### epsilon_beta = b_Rad * np.sin (beta) / np.pi * m_n
     # end def profile_overlap
 
     def constrain_v (self) :
@@ -427,6 +431,7 @@ class Gearbox :
     >>> gb = Gearbox (m, z, beta, n, delta_b, psi_m)
     >>> g0 = gb.gears [0]
     >>> g1 = gb.gears [1]
+
     >>> print ("T_ges: %.4f" % g0.T_ges)
     T_ges: 204044.7988
     >>> print ("Z_H: %.4f" % g0.Z_H)
@@ -459,6 +464,12 @@ class Gearbox :
     d_RW: 63.0877
     >>> print ("d_W: %.4f" % g0.d_W)
     d_W: 38.5536
+    >>> print ("epsilon_alpha: %.4f" % g0.epsilon_alpha)
+    epsilon_alpha: 1.5751
+    >>> print ("epsilon_alphan: %.4f" % g0.epsilon_alphan)
+    epsilon_alphan: 1.7414
+    >>> print ("epsilon_beta: %.4f" % g0.epsilon_beta)
+    epsilon_beta: 1.9181
 
     >>> print ("T_ges: %.4f" % g1.T_ges)
     T_ges: 955788.7945
@@ -492,6 +503,12 @@ class Gearbox :
     d_RW: 100.9091
     >>> print ("d_W: %.4f" % g1.d_W)
     d_W: 61.6667
+    >>> print ("epsilon_alpha: %.4f" % g1.epsilon_alpha)
+    epsilon_alpha: 1.6941
+    >>> print ("epsilon_alphan: %.4f" % g1.epsilon_alphan)
+    epsilon_alphan: 1.6941
+    >>> print ("epsilon_beta: %.4f" % g1.epsilon_beta)
+    epsilon_beta: 0.0000
 
     >>> print ("s_z: %.4f %.4f"  % tuple (gb.s_z))
     s_z: 12.0000 18.0000
@@ -625,7 +642,7 @@ class Gearbox :
         # Flanschdicke
         self.s_d = s_d = 1.5 * s_Wg
         # Gehäuse Innenlänge
-        self.a = a = np.array ([sum (x.D_R) / 2 for x in g])
+        self.a = a = [x.a for x in g]
         self.l_Gi = l_Gi = \
             ( sum (a)
             + (g [0].D_K [0] + g [1].D_K [1]) / 2

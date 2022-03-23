@@ -113,7 +113,6 @@ class Shaft :
         # Axialkraft
         self.F_a = self.F_t * np.tan (g.beta)
         # Bearings
-        # FIXME
         gb = self.gearbox
 
         if output_gear is None :
@@ -275,7 +274,6 @@ class Gear (Zone_Factor) :
     # submersion depth factor 2..5
     submersion_factor = 2
 
-    # FIXME
     # A note on modul: This is a european way to describe this, the
     # american version uses Diametral Pitch which is the reciprocal.
     # See https://de.wikipedia.org/wiki/Modul_(Zahnrad)
@@ -397,10 +395,6 @@ class Gear (Zone_Factor) :
         self.epsilon_alphan = self.epsilon_alpha / np.cos (self.beta) ** 2
         m_n = self.normalmodul
         self.epsilon_beta = self.b_rad * np.sin (self.beta) / (np.pi * m_n)
-
-        # FIXME
-        # Normal-Profilüberdeckung zwischen [1.1,1.25]
-        # Sprungüberdeckung (nur für Schrägvz) >1
     # end def profile_overlap
 
     def constrain_v (self) :
@@ -411,6 +405,21 @@ class Gear (Zone_Factor) :
             return self.v - 15
         return self.v - 10
     # end def constrain_v
+
+    def constrain_epsilon_alphan (self) :
+        """ Normal-Profilüberdeckung zwischen [1.1,1.25]
+            min 1.1 better 1.25
+        """
+        return 1.25 - self.epsilon_alphan
+    # end def constrain_epsilon_alphan
+
+    def constrain_epsilon_beta (self) :
+        """ Sprungüberdeckung (nur für Schrägvz) >1
+        """
+        if self.beta == 0 :
+            return 0
+        return 1 - self.epsilon_beta
+    # end def constrain_epsilon_beta
 
 # end class Gear
 
@@ -708,6 +717,18 @@ class Gearbox :
     def constrain_v_1 (self) :
         return self.gears [1].constrain_v ()
     # end def constrain_v_1
+
+    def constrain_epsilon_beta (self) :
+        return self.gears [0].constrain_epsilon_beta ()
+    # end def constrain_epsilon_beta
+
+    def constrain_epsilon_alphan_0 (self) :
+        return self.gears [0].constrain_epsilon_alphan ()
+    # end def constrain_epsilon_alphan_0
+
+    def constrain_epsilon_alphan_1 (self) :
+        return self.gears [1].constrain_epsilon_alphan ()
+    # end def constrain_epsilon_alphan_1
 
 # end class Gearbox
 

@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from rsclib.autosuper import autosuper
 from argparse import ArgumentParser
 from math import gcd, atan, acos
-from bisect import bisect_right
+from bisect import bisect_right, bisect_left
 from involute import inv_involute_apsol4 as inv_involute
 import pga
 import sys
@@ -16,6 +16,7 @@ class Material :
     HRC  = 1
 
     # Resulting psi_dlim from shaft bearing (Aufhängung / Lager)
+    # From TB-21-13
     # symetrical   O--X--O
     psi_dlim_symmetrical = dict \
         ( normal_annealed = 1.6
@@ -195,6 +196,82 @@ class Zone_Factor (autosuper) :
         """
         return sum (self.profile_shift) / sum (self.z)
     # end def profile_shift_normalized
+
+    f_sh_200 = \
+        ( ( 20.0,  5.0)
+        , ( 40.0,  6.5)
+        , (100.0,  7.0)
+        , (200.0,  8.0)
+        , (315.0, 10.0)
+        , (560.0, 12.0)
+        , (1e30,  16.0)
+        )
+    f_sh_200_1000 = \
+        ( ( 20.0,  6.0)
+        , ( 40.0,  7.0)
+        , (100.0,  8.0)
+        , (200.0, 11.0)
+        , (315.0, 14.0)
+        , (560.0, 18.0)
+        , (1e30,  24.0)
+        )
+    f_sh_1000 = \
+        ( ( 20.0, 10.0)
+        , ( 40.0, 13.0)
+        , (100.0, 18.0)
+        , (200.0, 25.0)
+        , (315.0, 30.0)
+        , (560.0, 38.0)
+        , (1e30,  50.0)
+        )
+
+    def flank_line_deformation (self, b, F_t) :
+        """ f_sh in µm (TB 21-16)
+            flank line deviation due to deformation (torsion and bending)
+            Flankenlinienabweichung durch Verformung
+            Zahnbreite b
+            Note: Bei ungleichen b ist die kleinere Breite einzusetzen
+        >>> z = Zone_Factor ([30, 30], 0)
+        >>> print ("%.1f" % z.flank_line_deformation (20, 199 * 20))
+        5.0
+        >>> print ("%.1f" % z.flank_line_deformation (20, 200 * 20))
+        6.0
+        >>> print ("%.1f" % z.flank_line_deformation (20, 1000 * 20))
+        6.0
+        >>> print ("%.1f" % z.flank_line_deformation (20, 1001 * 20))
+        10.0
+        >>> print ("%.1f" % z.flank_line_deformation (560, 199 * 560))
+        12.0
+        >>> print ("%.1f" % z.flank_line_deformation (560, 200 * 560))
+        18.0
+        >>> print ("%.1f" % z.flank_line_deformation (560, 1000 * 560))
+        18.0
+        >>> print ("%.1f" % z.flank_line_deformation (560, 1001 * 560))
+        38.0
+        >>> print ("%.1f" % z.flank_line_deformation (1000, 199 * 1000))
+        16.0
+        >>> print ("%.1f" % z.flank_line_deformation (1000, 200 * 1000))
+        24.0
+        >>> print ("%.1f" % z.flank_line_deformation (1000, 1000 * 1000))
+        24.0
+        >>> print ("%.1f" % z.flank_line_deformation (1000, 1001 * 1000))
+        50.0
+        """
+        ftb = F_t / b
+        tbl = None
+        if ftb < 200 :
+            tbl = self.f_sh_200
+        elif 200 <= ftb <= 1000 :
+            tbl = self.f_sh_200_1000
+        else :
+            tbl = self.f_sh_1000
+        assert tbl is not None
+        k   = (b, 0)
+        idx = bisect_left (tbl, k)
+        assert 0 <= idx <= len (tbl) - 1
+        assert b <= tbl [idx][0]
+        return tbl [idx][1]
+    # end def flank_line_deformation
 
     def set_beta (self, beta) :
         self.beta    = beta
@@ -411,7 +488,10 @@ class Gear (Zone_Factor) :
         K_Ft     = self.shaft.F_t / self.b_rad
         # S. 1310 (316) TB 21.14
         K_1      = 8.5
-        K_2      = 0.0087
+        # S. 1310 (316) TB 21.14
+        # Geradverzahnung vs. Schrägverzahnung: Different value for K_2
+        # depending on self.beta.
+        K_2      = 0.0087 if self.beta != 0 else 0.0193
         K_3      = \
             ( 0.01 * self.z [0] * self.v
             * sqrt (self.u_tat ** 2 / (1 + self.u_tat) ** 2)
@@ -422,7 +502,8 @@ class Gear (Zone_Factor) :
         c        = 1.0 # FIXME: Check
         f_Hbeta  = 10 # µm FIXME S. 1313 (319) TB 21:16c
         f_ma     = c * f_Hbeta
-        f_sh     = 7 # 40 < Breite < 100, F_t/b > 200  S. 1312 (318) TB 21:16a
+        # flank line deviation due to deformation (torsion and bending)
+        f_sh     = self.flank_line_deformation (self.b_rad, self.shaft.F_t)
         F_betax  = f_ma + 1.33 * f_sh
         K_Fm     = K_v * K_Ft
         F_betay  = F_betax - y_beta

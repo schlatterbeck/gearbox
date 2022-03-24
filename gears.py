@@ -93,16 +93,18 @@ class Material :
         return self.dlim_by_bearing [shaft_bearing][self.material_type]
     # end psi_dlim
 
-    def size_factor_flank (self, m_n = None) :
+    def size_factor_flank (self, m_n) :
         """ Z_X TB 21-20
             Size factor (flank) (Flank pressure)
             Größenfaktor (Flanke) (Flankenpressung)
             Note that this is always 1 for "Vergütungsstahl".
+        >>> ch = 'case_hardened'
         >>> tt = 'tempered'
         >>> ni = 'nitrified'
         >>> HB = Material.HB
-        >>> m1 = Material ('', HB, tt, 0, 0, 0, 0,  740,  740, 1)
+        >>> m1 = Material ('', HB, ch, 0, 0, 0, 0,  740,  740, 1)
         >>> m2 = Material ('', HB, ni, 0, 0, 0, 0,  740,  740, 1)
+        >>> m3 = Material ('', HB, tt, 0, 0, 0, 0,  740,  740, 1)
         >>> print ("%.3f" % m1.size_factor_flank (10))
         1.000
         >>> print ("%.3f" % m1.size_factor_flank (25))
@@ -119,10 +121,14 @@ class Material :
         0.750
         >>> print ("%.3f" % m2.size_factor_flank (45))
         0.750
+        >>> print ("%.3f" % m3.size_factor_flank (10))
+        1.000
+        >>> print ("%.3f" % m3.size_factor_flank (45))
+        1.000
         """
-        if m_n is None :
-            m_n = self.normalmodul
-        if self.material_type == 'nitrified' :
+        if self.material_type in ('normal_annealed', 'tempered') :
+            v = 1.0
+        elif self.material_type == 'nitrified' :
             v = 1.08 - 0.011 * m_n
             if v < 0.75 :
                 v = 0.75
@@ -135,15 +141,12 @@ class Material :
         return v
     # end def size_factor_flank
 
-    def size_factor_tooth (self, m_n = None) :
+    def size_factor_tooth (self, m_n) :
         """ Y_X TB 21-20
             Size factor (tooth foot)
             Größenfaktor (Zahnfuß)
             Note that we do not have "Gusswerkstoffe"
             which would go down to 0.7
-            FIXME: Unterscheidung in oberflächengehärtet (Eh, IF, NT, NV)
-            und Bau- und Vergütungsstähle. Needs clarification which
-            material_type to use here
         >>> na = 'normal_annealed'
         >>> ni = 'nitrified'
         >>> HB = Material.HB
@@ -178,9 +181,7 @@ class Material :
         >>> print ("%.3f" % m2.size_factor_tooth (45))
         0.800
         """
-        if m_n is None :
-            m_n = self.normalmodul
-        if self.material_type in ('nitrified', 'tempered') :
+        if self.material_type in ('nitrified', 'case_hardened') :
             v = 1.05 - 0.01 * m_n
             if v < 0.8 :
                 v = 0.8
@@ -220,12 +221,10 @@ class Material :
             max_F_betax = 80
         if v < 5 :
             max_F_betax = 1e6
-        # FIXME: Does this also hold for other material_type?
-        if self.material_type == 'nitrified' :
+        if self.material_type in ('nitrified', 'case_hardened') :
             k = 0.15
             m = 6
         else :
-            # FIXME: Should this be sigma_h_lim_max? or _min?
             k = 320 / self.sigma_h_lim
             m = max_F_betax * k
         r = F_betax * k
@@ -325,7 +324,7 @@ class Zone_Factor (autosuper) :
     # Profilverschiebung (profile shift)
     profile_shift = [0, 0]
 
-    def __init__ (self, z, beta = 0, alpha = None) :
+    def __init__ (self, z, beta = 0, alpha = None, **kw) :
         self.z    = np.array (z)
         if alpha is not None :
             self.alpha = alpha
@@ -557,16 +556,18 @@ class Gear (Zone_Factor) :
           0.85, 0.95, 1.125, 1.375, 1.75, 2.25, 2.75, 3.5, 4.5, 5.5,
           7, 9, 11, 14, 18, 22, 28, 36, 45, 55, 70
         ]
+    din_quality = 6
 
     def __init__ (self, gb, materials, z, n_ein, shaft, psi_m, **kw) :
         self.__super.__init__ (z, **kw)
-        #import pdb; pdb.set_trace ()
         self.gb        = gb
         self.materials = materials
         self.n_ein     = n_ein
         self.shaft     = shaft
         self.psi_m     = psi_m
         self.mod_ovl   = 0
+        if 'din_quality' in kw :
+            self.din_quality = kw ['din_quality']
         assert len (z) == 2
         assert len (materials) == 2
         # Zone factor Z_H
@@ -577,15 +578,15 @@ class Gear (Zone_Factor) :
         u_tat = self.u_tat = self.z [1] / self.z [0]
         # Betriebsmoment Eingangs-Welle
         self.T_ges = T_ges = self.shaft.T_ges
-        # Stirnmodul Rad 1, Rad 2
-        # FIXME: Do we need the minimum here?
-        self.psi_d_max = psi_d_max = max (m.psi_dlim () for m in materials)
+        # Use psi_dlim of Ritzel
+        self.psi_dlim = psi_dlim = materials [0].psi_dlim ()
         # T_ges is Nm -> convert to mm
+        # Stirnmodul Rad 1, Rad 2
         self.stirnmodul_calc = \
             ( (2 * T_ges * 1.2) / ((sigma_Hlim / 1.4) ** 2)
             * (u_tat + 1) / u_tat
             * (self.Z_E ** 2) * (Z_H ** 2)
-            * 1 / (psi_d_max * self.z [0] ** 3)
+            * 1 / (psi_dlim * self.z [0] ** 3)
             ) ** (1/3)
         self.normalmodul_calc = self.stirnmodul_calc * np.cos (self.beta)
         # lookup moduln
@@ -677,7 +678,8 @@ class Gear (Zone_Factor) :
         self.F_tbase = F_tbase = self.shaft.F_t / self.gb.K_A
         m_n       = self.normalmodul
         # S. 1317 (323-4) TB 21-20d
-        Y_X       = self.size_factor_tooth ()
+        Y_X       = [m.size_factor_tooth (m_n) for m in self.materials]
+        Y_X       = sum (Y_X) / 2
         K_Ft      = self.shaft.F_t / self.b_rad
         # S. 1310 (316) TB 21.14
         K_1       = 8.5
@@ -691,9 +693,10 @@ class Gear (Zone_Factor) :
             )
         self.K_v  = K_v = 1 + (K_1 / K_Ft + K_2) * K_3
         # S. 1313 (319) TB 21.17
-        c         = 1.0 # FIXME: Check
+        c         = 1.0
         # µm S. 1313 (319) TB 21:16c
-        self.f_Hbeta = f_Hbeta = self.tt_angle_deviation ()
+        self.f_Hbeta = f_Hbeta = self.tt_angle_deviation \
+            (din_quality = self.din_quality)
         f_ma      = c * f_Hbeta
         # flank line deviation due to deformation (torsion and bending)
         f_sh      = self.flank_line_deformation (self.b_rad, self.shaft.F_t)
@@ -715,13 +718,17 @@ class Gear (Zone_Factor) :
         # Y_beta holds for beta < 30° (and is set to 30° in the
         # following formula, see DIN 3990 part 41 p. 13
         # we never have beta > 30°
-        Y_beta    = 1 - self.epsilon_beta * self.beta / (120 * np.pi / 180)
+        Y_beta    = (1 - (min (self.epsilon_beta, 1)
+                         * self.beta / (120 * np.pi / 180)
+                         )
+                    )
         # Y_Fa:  S. 1316 (322) TB 21-19a
         self.Y_Fa = Y_Fa = np.array ([yfa (self.z [0]), yfa (self.z [1])])
         # Y_Sa:  S. 1316 (322) TB 21-19b
         self.Y_Sa = Y_Sa = np.array ([ysa (self.z [0]), ysa (self.z [1])])
         Y_eps     = 0.25 + 0.75 / self.epsilon_alphan
         sigma_F0  = F_tbase / (b * m_n) * Y_Fa * Y_Sa * Y_eps * Y_beta
+        self.sigma_F0 = sigma_F0
         self.sigma_FE = sigma_FE = np.array \
             ([m.sigma_f_lim for m in self.materials])
         sigma_FP  = sigma_FE * self.gb.Y_NT * Y_X
@@ -736,7 +743,7 @@ class Gear (Zone_Factor) :
         Z_beta   = np.sqrt (np.cos (self.beta))
         Z_eps1   = np.sqrt ( (4 - self.epsilon_alpha) / 3
                            * (1 - self.epsilon_beta)
-                           * self.epsilon_beta / self.epsilon_alpha
+                           + self.epsilon_beta / self.epsilon_alpha
                            )
         Z_eps2   = np.sqrt (1 / self.epsilon_alpha)
         Z_eps    = Z_eps1 if Z_eps1 < 1 else Z_eps2
@@ -752,15 +759,18 @@ class Gear (Zone_Factor) :
                       * (self.u_tat + 1) / self.u_tat
                       )
             )
-        Z_NT     = 1    # FIXME
+        Z_NT     = 1
         # S. 1317 (323-4) TB 21-20d
-        Z_X      = self.size_factor_flank ()
+        m_n      = self.normalmodul
+        Z_X      = [m.size_factor_flank (m_n) for m in self.materials]
+        Z_X      = sum (Z_X) / 2
         Z_W      = 1.09 # FIXME
-        Z_LVR    = 0.92 # FIXME
+        Z_LVR    = 0.92
         sigma_HP = np.array ([m.sigma_h_lim for m in self.materials]) \
                    * Z_NT * Z_X * Z_W * Z_LVR
         K_H      = np.sqrt (self.gb.K_A * self.K_v * self.epsilon_alphan)
         sigma_H  = sigma_H0 * K_H
+
         self.S_H = sigma_HP / sigma_H
     # end def hertz_pressure
 
@@ -863,8 +873,8 @@ class Gearbox :
     sigma_Hlim: 740.0000
     >>> print ("u_tat: %.4f" % g0.u_tat)
     u_tat: 4.6842
-    >>> print ("psi_d_max: %.4f" % g0.psi_d_max)
-    psi_d_max: 1.1000
+    >>> print ("psi_dlim: %.4f" % g0.psi_dlim)
+    psi_dlim: 1.1000
     >>> print ("m_tcalc: %.4f" % g0.stirnmodul_calc)
     m_tcalc: 3.8759
     >>> print ("m_ncalc: %.4f" % g0.normalmodul_calc)
@@ -901,6 +911,10 @@ class Gearbox :
     y_beta: 8.527
     >>> print ("f_Hbeta: %d" % g0.f_Hbeta)
     f_Hbeta: 10
+    >>> print ("sigma_F0: %.4f %.4f" % tuple (g0.sigma_F0))
+    sigma_F0: 28.9547 26.8115
+    >>> print ("S_H: %.4f %.4f" % tuple (g0.S_H))
+    S_H: 1.093 1.049
 
     >>> print ("T_ges: %.4f" % g1.T_ges)
     T_ges: 955788.7945
@@ -910,8 +924,8 @@ class Gearbox :
     sigma_Hlim: 777.5000
     >>> print ("u_tat: %.4f" % g1.u_tat)
     u_tat: 3.6190
-    >>> print ("psi_d_max: %.4f" % g1.psi_d_max)
-    psi_d_max: 1.1000
+    >>> print ("psi_dlim: %.4f" % g1.psi_dlim)
+    psi_dlim: 1.1000
     >>> print ("m_tcalc: %.4f" % g1.stirnmodul_calc)
     m_tcalc: 5.9334
     >>> print ("m_ncalc: %.4f" % g1.normalmodul_calc)
@@ -945,9 +959,13 @@ class Gearbox :
     >>> print ("Y_Sa: %.3f %.3f" % tuple (g1.Y_Sa))
     Y_Sa: 1.613 1.887
     >>> print ("y_beta: %.3f" % g1.y_beta)
-    y_beta: 12.5
+    y_beta: 11.242
     >>> print ("f_Hbeta: %d" % g1.f_Hbeta)
-    f_Hbeta: 10
+    f_Hbeta: 16
+    >>> print ("sigma_F0: %.4f %.4f" % tuple (g1.sigma_F0))
+    sigma_F0: 44.9736 41.9209
+    >>> print ("S_H: %.4f %.4f" % tuple (g1.S_H))
+    S_H: 1.11 1.056
 
     >>> print ("s_z: %.4f %.4f"  % tuple (gb.s_z))
     s_z: 12.0000 18.0000
@@ -1067,7 +1085,12 @@ class Gearbox :
             )
         s.append (Shaft (self, g [-1].out_T_ges))
         g.append \
-            (Gear (self, materials [2:], z [2:], n2, s [-1], psi_m = psi_m [1]))
+            ( Gear
+                ( self, materials [2:], z [2:]
+                , n2, s [-1], psi_m = psi_m [1]
+                , din_quality = 7
+                )
+            )
         s.append (Shaft (self, g [-1].out_T_ges))
 
         self.factor = (z [1] * z [3]) / (z [0] * z [2])

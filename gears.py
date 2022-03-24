@@ -7,6 +7,7 @@ from argparse import ArgumentParser
 from math import gcd, atan, acos
 from bisect import bisect_right, bisect_left
 from involute import inv_involute_apsol4 as inv_involute
+from corr import yfa, ysa
 import pga
 import sys
 
@@ -91,6 +92,47 @@ class Material :
         """
         return self.dlim_by_bearing [shaft_bearing][self.material_type]
     # end psi_dlim
+
+    def y_beta (self, F_betax, v = 0) :
+        """ From TB 21-17
+        >>> tt = 'tempered'
+        >>> ni = 'nitrified'
+        >>> HB = Material.HB
+        >>> m1 = Material ('', HB, tt, 0, 0, 0, 0,  740,  740, 1)
+        >>> m2 = Material ('', HB, ni, 0, 0, 0, 0,  740,  740, 1)
+        >>> m3 = Material ('', HB, tt, 0, 0, 0, 0,  800,  800, 1)
+        >>> m4 = Material ('', HB, tt, 0, 0, 0, 0, 1000, 1000, 1)
+        >>> print ("%.2f" % m2.y_beta (20))
+        3.00
+        >>> print ("%.2f" % m3.y_beta (30))
+        12.00
+        >>> print ("%.2f" % m4.y_beta (40))
+        12.80
+        >>> print ("%.2f" % m4.y_beta (90, 15))
+        12.80
+        >>> print ("%.2f" % m4.y_beta (90, 9))
+        25.60
+        >>> print ("%.2f" % m4.y_beta (90, 4))
+        28.80
+        """
+        max_F_betax = 40
+        if v < 10 :
+            max_F_betax = 80
+        if v < 5 :
+            max_F_betax = 1e6
+        # FIXME: Does this also hold for other material_type?
+        if self.material_type == 'nitrified' :
+            k = 0.15
+            m = 6
+        else :
+            # FIXME: Should this be sigma_h_lim_max? or _min?
+            k = 320 / self.sigma_h_lim
+            m = max_F_betax * k
+        r = F_betax * k
+        if r > m :
+            r = m
+        return r
+    # end def y_beta
 
 # end class Material
 
@@ -277,6 +319,56 @@ class Zone_Factor (autosuper) :
         self.beta    = beta
         self.alpha_t = atan (np.tan (self.alpha) / np.cos (beta))
     # end def set_beta
+
+    tt_by_din = dict \
+        ((  ( 6, ((20,  8), (40,   9), (100,  10), (1e4,  11)))
+         ,  ( 7, ((20, 11), (40,  13), (100,  14), (1e4,  16)))
+         ,  ( 8, ((20, 16), (40,  18), (100,  20), (1e4,  22)))
+         ,  ( 9, ((20, 25), (40,  28), (100,  28), (1e4,  32)))
+         ,  (10, ((20, 36), (40,  40), (100,  45), (1e4,  50)))
+         ,  (11, ((20, 56), (40,  63), (100,  71), (1e4,  80)))
+         ,  (12, ((20, 90), (40, 100), (100, 110), (1e4, 125)))
+        ))
+
+    def tt_angle_deviation (self, b = None, din_quality = 6) :
+        """ f_Hß in µm TB 21-16c
+            Tooth trace angle deviation
+            Flankenlinien-Winkel-Abweichung
+        >>> z = Zone_Factor ([30, 30], 0)
+        >>> z.tt_angle_deviation (20)
+        8
+        >>> z.tt_angle_deviation (21)
+        9
+        >>> z.tt_angle_deviation (40)
+        9
+        >>> z.tt_angle_deviation (41)
+        10
+        >>> z.tt_angle_deviation (100)
+        10
+        >>> z.tt_angle_deviation (101)
+        11
+        >>> z.tt_angle_deviation (20, 12)
+        90
+        >>> z.tt_angle_deviation (21, 12)
+        100
+        >>> z.tt_angle_deviation (40, 12)
+        100
+        >>> z.tt_angle_deviation (41, 12)
+        110
+        >>> z.tt_angle_deviation (100, 12)
+        110
+        >>> z.tt_angle_deviation (101, 12)
+        125
+        """
+        if b is None :
+            b = self.b
+        tbl = self.tt_by_din [din_quality]
+        k   = (b, 0)
+        idx = bisect_left (tbl, k)
+        assert 0 <= idx <= len (tbl) - 1
+        assert b <= tbl [idx][0]
+        return tbl [idx][1]
+    # end def tt_angle_deviation
 
     def zone_factor (self, shift = None) :
         """ Zone factor Z_H. This typically gets the transmission index
@@ -478,67 +570,64 @@ class Gear (Zone_Factor) :
         self.epsilon_beta = self.b_rad * np.sin (self.beta) / (np.pi * m_n)
     # end def profile_overlap
 
-    def fixme (self) :
+    def tooth_root_strength (self) :
         """ Zahnfussfestigkeit
         """
         # FIXME: put in regression-test, which Shaft?
         self.F_tbase = F_tbase = self.shaft.F_t / self.gb.K_A
-        m_n      = self.normalmodul
-        Y_X      = 1 # FIXME S. 1317 (323-4) TB 21-20d
-        K_Ft     = self.shaft.F_t / self.b_rad
+        m_n       = self.normalmodul
+        Y_X       = 1 # FIXME S. 1317 (323-4) TB 21-20d
+        K_Ft      = self.shaft.F_t / self.b_rad
         # S. 1310 (316) TB 21.14
-        K_1      = 8.5
+        K_1       = 8.5
         # S. 1310 (316) TB 21.14
         # Geradverzahnung vs. Schrägverzahnung: Different value for K_2
         # depending on self.beta.
-        K_2      = 0.0087 if self.beta != 0 else 0.0193
-        K_3      = \
+        K_2       = 0.0087 if self.beta != 0 else 0.0193
+        K_3       = \
             ( 0.01 * self.z [0] * self.v
-            * sqrt (self.u_tat ** 2 / (1 + self.u_tat) ** 2)
+            * np.sqrt (self.u_tat ** 2 / (1 + self.u_tat) ** 2)
             )
-        K_v      = 1 + (K_1 / K_Ft + K_2) * K_3
+        self.K_v  = K_v = 1 + (K_1 / K_Ft + K_2) * K_3
         # S. 1313 (319) TB 21.17
-        y_beta   = [9.0, 12.5] # µm FIXME: Linear interpolation from table
-        c        = 1.0 # FIXME: Check
-        f_Hbeta  = 10 # µm FIXME S. 1313 (319) TB 21:16c
-        f_ma     = c * f_Hbeta
+        c         = 1.0 # FIXME: Check
+        # µm S. 1313 (319) TB 21:16c
+        self.f_Hbeta = f_Hbeta = self.tt_angle_deviation ()
+        f_ma      = c * f_Hbeta
         # flank line deviation due to deformation (torsion and bending)
-        f_sh     = self.flank_line_deformation (self.b_rad, self.shaft.F_t)
-        F_betax  = f_ma + 1.33 * f_sh
-        K_Fm     = K_v * K_Ft
-        F_betay  = F_betax - y_beta
-        K_Hbeta1 = 1 + 10 * F_betay / K_Fm
-        K_Hbeta2 = 2 * np.sqrt (10 * F_betay / K_Fm)
-        K_Hbeta  = K_Hbeta1 if K_Hbeta1 <= 2 else K_Hbeta2
-        h        = (self.D_K - self.D_F) / 2
-        K_bh     = self.b_rad / h
-        N_F      = K_bh ** 2 / (1 + K_bh + K_bh ** 2)
-        K_Fbeta  = K_Hbeta ** N_F
-        K_Fges   = self.K_A * K_v * self.epsilon_alphan * K_Fbeta
-        b        = np.array ([self.b, self.b_rad])
-        # Y_beta holds for beta < 30°
-        Y_beta   = 1 - self.epsilon_beta * self.beta / (120 * np.pi / 180)
+        f_sh      = self.flank_line_deformation (self.b_rad, self.shaft.F_t)
+        F_betax   = f_ma + 1.33 * f_sh
+        y_beta    = [m.y_beta (F_betax, self.v) for m in self.materials]
+        # According to TB 21-17 we compute average if materials are different
+        self.y_beta = y_beta = sum (y_beta) / 2
+        K_Fm      = K_v * K_Ft
+        F_betay   = F_betax - y_beta
+        K_Hbeta1  = 1 + 10 * F_betay / K_Fm
+        K_Hbeta2  = 2 * np.sqrt (10 * F_betay / K_Fm)
+        K_Hbeta   = K_Hbeta1 if K_Hbeta1 <= 2 else K_Hbeta2
+        h         = (self.D_K - self.D_F) / 2
+        K_bh      = self.b_rad / h
+        N_F       = K_bh ** 2 / (1 + K_bh + K_bh ** 2)
+        K_Fbeta   = K_Hbeta ** N_F
+        K_Fges    = self.gb.K_A * K_v * self.epsilon_alphan * K_Fbeta
+        b         = np.array ([self.b, self.b_rad])
+        # Y_beta holds for beta < 30° (and is set to 30° in the
+        # following formula, see DIN 3990 part 41 p. 13
+        # we never have beta > 30°
+        Y_beta    = 1 - self.epsilon_beta * self.beta / (120 * np.pi / 180)
         # Y_Fa:  S. 1316 (322) TB 21-19a
-        Y_Fa     = np.array ([2.96, 2.22])
-        Y_Fa     = np.array ([2.87, 2.25])
+        self.Y_Fa = Y_Fa = np.array ([yfa (self.z [0]), yfa (self.z [1])])
         # Y_Sa:  S. 1316 (322) TB 21-19b
-        Y_Sa     = np.array ([1.58, 1.92])
-        self.Y_Sa = Y_Sa = np.array ([1.61, 1.885])
-        Y_eps    = 0.25 + 0.75 / self.epsilon_alphan
-        sigma_F0 = F_tbase / (b * m_n) * Y_Fa * Y_Sa * Y_eps * Y_beta
+        self.Y_Sa = Y_Sa = np.array ([ysa (self.z [0]), ysa (self.z [1])])
+        Y_eps     = 0.25 + 0.75 / self.epsilon_alphan
+        sigma_F0  = F_tbase / (b * m_n) * Y_Fa * Y_Sa * Y_eps * Y_beta
         self.sigma_FE = sigma_FE = np.array \
-            ([m.sigma_f_lim for m in self.material])
-        sigma_FP = sigma_FE * self.gb.Y_NT * Y_X
+            ([m.sigma_f_lim for m in self.materials])
+        sigma_FP  = sigma_FE * self.gb.Y_NT * Y_X
         self.sigma_F = sigma_F = sigma_F0 * K_Fges
         # When computing for z0: f(z0), for z1: f(z1)
-        self.S_F = S_F = sigma_FP / sigma_F
-    # end def
-
-    def fixme2 (self) :
-        """ Verhältnis Breite/Höhe
-        """
-        pass
-    # end def
+        self.S_F  = S_F = sigma_FP / sigma_F
+    # end def tooth_root_strength
 
     def hertz_pressure (self) :
         """ Hertzsche Pressung
@@ -566,9 +655,9 @@ class Gear (Zone_Factor) :
         Z_X      = 1    # FIXME
         Z_W      = 1.09 # FIXME
         Z_LVR    = 0.92 # FIXME
-        sigma_HP = np.array ([m.sigma_h_lim for m in self.material]) \
+        sigma_HP = np.array ([m.sigma_h_lim for m in self.materials]) \
                    * Z_NT * Z_X * Z_W * Z_LVR
-        K_H      = np.sqrt (self.K_A * K_v * self.epsilon_alphan)
+        K_H      = np.sqrt (self.gb.K_A * self.K_v * self.epsilon_alphan)
         sigma_H  = sigma_H0 * K_H
         self.S_H = sigma_HP / sigma_H
     # end def hertz_pressure
@@ -702,6 +791,14 @@ class Gearbox :
     epsilon_alphan: 1.7414
     >>> print ("epsilon_beta: %.4f" % g0.epsilon_beta)
     epsilon_beta: 1.9181
+    >>> print ("Y_Fa: %.3f %.3f" % tuple (g0.Y_Fa))
+    Y_Fa: 2.956 2.214
+    >>> print ("Y_Sa: %.3f %.3f" % tuple (g0.Y_Sa))
+    Y_Sa: 1.591 1.918
+    >>> print ("y_beta: %.3f" % g0.y_beta)
+    y_beta: 8.527
+    >>> print ("f_Hbeta: %d" % g0.f_Hbeta)
+    f_Hbeta: 10
 
     >>> print ("T_ges: %.4f" % g1.T_ges)
     T_ges: 955788.7945
@@ -741,6 +838,14 @@ class Gearbox :
     epsilon_alphan: 1.6941
     >>> print ("epsilon_beta: %.4f" % g1.epsilon_beta)
     epsilon_beta: 0.0000
+    >>> print ("Y_Fa: %.3f %.3f" % tuple (g1.Y_Fa))
+    Y_Fa: 2.865 2.245
+    >>> print ("Y_Sa: %.3f %.3f" % tuple (g1.Y_Sa))
+    Y_Sa: 1.613 1.887
+    >>> print ("y_beta: %.3f" % g1.y_beta)
+    y_beta: 12.5
+    >>> print ("f_Hbeta: %d" % g1.f_Hbeta)
+    f_Hbeta: 10
 
     >>> print ("s_z: %.4f %.4f"  % tuple (gb.s_z))
     s_z: 12.0000 18.0000
@@ -901,6 +1006,11 @@ class Gearbox :
             g.profile_overlap ()
 
         self.oil ()
+
+        for g in self.gears :
+            g.tooth_root_strength ()
+            g.hertz_pressure ()
+            g.gewaltbruchsicherheit ()
 
     # end def __init__
 

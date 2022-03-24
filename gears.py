@@ -93,6 +93,106 @@ class Material :
         return self.dlim_by_bearing [shaft_bearing][self.material_type]
     # end psi_dlim
 
+    def size_factor_flank (self, m_n = None) :
+        """ Z_X TB 21-20
+            Size factor (flank) (Flank pressure)
+            Größenfaktor (Flanke) (Flankenpressung)
+            Note that this is always 1 for "Vergütungsstahl".
+        >>> tt = 'tempered'
+        >>> ni = 'nitrified'
+        >>> HB = Material.HB
+        >>> m1 = Material ('', HB, tt, 0, 0, 0, 0,  740,  740, 1)
+        >>> m2 = Material ('', HB, ni, 0, 0, 0, 0,  740,  740, 1)
+        >>> print ("%.3f" % m1.size_factor_flank (10))
+        1.000
+        >>> print ("%.3f" % m1.size_factor_flank (25))
+        0.925
+        >>> print ("%.3f" % m1.size_factor_flank (30))
+        0.900
+        >>> print ("%.3f" % m1.size_factor_flank (45))
+        0.900
+        >>> print ("%.3f" % m2.size_factor_flank (10))
+        0.970
+        >>> print ("%.3f" % m2.size_factor_flank (25))
+        0.805
+        >>> print ("%.3f" % m2.size_factor_flank (30))
+        0.750
+        >>> print ("%.3f" % m2.size_factor_flank (45))
+        0.750
+        """
+        if m_n is None :
+            m_n = self.normalmodul
+        if self.material_type == 'nitrified' :
+            v = 1.08 - 0.011 * m_n
+            if v < 0.75 :
+                v = 0.75
+        else :
+            v = 1.05 - 0.005 * m_n
+            if v < 0.9 :
+                v = 0.9
+        if v > 1 :
+            v = 1.0
+        return v
+    # end def size_factor_flank
+
+    def size_factor_tooth (self, m_n = None) :
+        """ Y_X TB 21-20
+            Size factor (tooth foot)
+            Größenfaktor (Zahnfuß)
+            Note that we do not have "Gusswerkstoffe"
+            which would go down to 0.7
+            FIXME: Unterscheidung in oberflächengehärtet (Eh, IF, NT, NV)
+            und Bau- und Vergütungsstähle. Needs clarification which
+            material_type to use here
+        >>> na = 'normal_annealed'
+        >>> ni = 'nitrified'
+        >>> HB = Material.HB
+        >>> m1 = Material ('', HB, na, 0, 0, 0, 0,  740,  740, 1)
+        >>> m2 = Material ('', HB, ni, 0, 0, 0, 0,  740,  740, 1)
+        >>> print ("%.3f" % m1.size_factor_tooth (2))
+        1.000
+        >>> print ("%.3f" % m1.size_factor_tooth (5))
+        1.000
+        >>> print ("%.3f" % m1.size_factor_tooth (10))
+        0.970
+        >>> print ("%.3f" % m1.size_factor_tooth (15))
+        0.940
+        >>> print ("%.3f" % m1.size_factor_tooth (25))
+        0.880
+        >>> print ("%.3f" % m1.size_factor_tooth (30))
+        0.850
+        >>> print ("%.3f" % m1.size_factor_tooth (45))
+        0.850
+        >>> print ("%.3f" % m2.size_factor_tooth (2))
+        1.000
+        >>> print ("%.3f" % m2.size_factor_tooth (5))
+        1.000
+        >>> print ("%.3f" % m2.size_factor_tooth (10))
+        0.950
+        >>> print ("%.3f" % m2.size_factor_tooth (15))
+        0.900
+        >>> print ("%.3f" % m2.size_factor_tooth (25))
+        0.800
+        >>> print ("%.3f" % m2.size_factor_tooth (30))
+        0.800
+        >>> print ("%.3f" % m2.size_factor_tooth (45))
+        0.800
+        """
+        if m_n is None :
+            m_n = self.normalmodul
+        if self.material_type in ('nitrified', 'tempered') :
+            v = 1.05 - 0.01 * m_n
+            if v < 0.8 :
+                v = 0.8
+        else :
+            v = 1.03 - 0.006 * m_n
+            if v < 0.85 :
+                v = 0.85
+        if v > 1 :
+            v = 1.0
+        return v
+    # end def size_factor_tooth
+
     def y_beta (self, F_betax, v = 0) :
         """ From TB 21-17
         >>> tt = 'tempered'
@@ -576,7 +676,8 @@ class Gear (Zone_Factor) :
         # FIXME: put in regression-test, which Shaft?
         self.F_tbase = F_tbase = self.shaft.F_t / self.gb.K_A
         m_n       = self.normalmodul
-        Y_X       = 1 # FIXME S. 1317 (323-4) TB 21-20d
+        # S. 1317 (323-4) TB 21-20d
+        Y_X       = self.size_factor_tooth ()
         K_Ft      = self.shaft.F_t / self.b_rad
         # S. 1310 (316) TB 21.14
         K_1       = 8.5
@@ -652,7 +753,8 @@ class Gear (Zone_Factor) :
                       )
             )
         Z_NT     = 1    # FIXME
-        Z_X      = 1    # FIXME
+        # S. 1317 (323-4) TB 21-20d
+        Z_X      = self.size_factor_flank ()
         Z_W      = 1.09 # FIXME
         Z_LVR    = 0.92 # FIXME
         sigma_HP = np.array ([m.sigma_h_lim for m in self.materials]) \

@@ -12,6 +12,17 @@ import pga
 import sys
 
 class Material :
+    """ Note on hardness: Brinell hardness can either be measured with a
+        standardized ball or with a tungsten carbide ball. The latter
+        starts to differ from the measurements with the standard ball at
+        about 442 brinell hardness (where the tungsten ball measures 443)
+        Note that measurements with the standard ball are defined only
+        up to 451 or so.
+        So we are using Brinell hardness measured with the tungsten ball
+        especially when converting Rockwell Scale C hardness to Brinell.
+        All values directly given in Brinell hardness are below 200
+        anyway.
+    """
     # Einheit Härtegrad
     HB   = 0
     HRC  = 1
@@ -75,6 +86,147 @@ class Material :
     def hardness (self) :
         return (self.hardness_min + self.hardness_max) / 2
     # end def hardness
+
+    hrc_table = \
+        ( (30, ( 5.97,   104.7))
+        , (40, ( 8.57,    27.6))
+        , (50, (11.158,  -79.6))
+        , (60, (17.515, -401.0))
+        , (65, (17.515, -401.0))
+        )
+    hrc_tbl2 = \
+        ( (20, 226)
+        , (21, 231)
+        , (22, 237)
+        , (23, 243)
+        , (24, 247)
+        , (25, 253)
+        , (26, 258)
+        , (27, 264)
+        , (28, 271)
+        , (29, 279)
+        , (30, 286)
+        , (31, 294)
+        , (32, 301)
+        , (33, 311)
+        , (34, 319)
+        , (35, 327)
+        , (36, 336)
+        , (37, 344)
+        , (38, 353)
+        , (39, 362)
+        , (40, 371)
+        , (41, 381)
+        , (42, 390)
+        , (43, 400)
+        , (44, 409)
+        , (45, 421)
+        , (46, 432)
+        , (47, 443)
+        , (48, 455)
+        , (49, 469)
+        , (50, 481)
+        , (51, 496)
+        , (52, 512)
+        , (53, 525)
+        , (54, 543)
+        , (55, 560)
+        , (56, 577)
+        , (57, 595)
+        , (58, 615)
+        , (59, 634)
+        , (60, 654)
+        , (61, 670)
+        , (62, 688)
+        , (63, 705)
+        , (64, 722)
+        , (65, 739)
+        )
+
+    def hardness_hb (self, h = None) :
+        """ Convert hardness in whatever unit to HB (Brinell)
+            Currently we support only HRC (Rockwell Scale C)
+        >>> HRC = Material.HRC
+        >>> ni = 'nitrified'
+        >>> for hrc in range (20, 65) :
+        ...     m = Material ('', HRC, ni, hrc, hrc, 0, 0, 0, 0, 1)
+        ...     print ("%.0f %.2f" % (m.hardness, m.hardness_hb ()))
+        20 226
+        21 231
+        22 237
+        23 243
+        24 247
+        25 253
+        26 258
+        27 264
+        28 271
+        29 279
+        30 286
+        31 294
+        32 301
+        33 311
+        34 319
+        35 327
+        36 336
+        37 344
+        38 353
+        39 362
+        40 371
+        41 381
+        42 390
+        43 400
+        44 409
+        45 421
+        46 432
+        47 443
+        48 455
+        49 469
+        50 481
+        51 496
+        52 512
+        53 525
+        54 543
+        55 560
+        56 577
+        57 595
+        58 615
+        59 634
+        60 654
+        61 670
+        62 688
+        63 705
+        64 722
+        65 739
+        """
+        if h is None :
+            h = self.hardness
+        if self.unit == self.HB :
+            return h
+        else :
+            assert self.unit == self.HRC
+            tbl = self.hrc_table
+            k   = (h, (0, 0))
+            idx = bisect_left (tbl, k)
+            if not 0 <= idx <= len (tbl) - 1 :
+                import pdb; pdb.set_trace ()
+            assert 0 <= idx <= len (tbl) - 1
+            assert h <= tbl [idx][0]
+            a, c = tbl [idx][1]
+            return h * a + c
+    # end def hardness_hb
+
+    def plot_hardness (self) :
+        x, y = np.array (self.hrc_tbl2).T
+        y_comp = []
+        for xx in x :
+            y_comp.append (self.hardness_hb (xx))
+        plt.plot (x, y)
+        plt.plot (x, y_comp)
+        plt.show ()
+        z = np.array (y_comp) - y
+        plt.plot (x, z)
+        plt.show ()
+    # end def plot_hardness
 
     @property
     def sigma_f_lim (self) :
@@ -1399,6 +1551,10 @@ if __name__ == '__main__' :
         , action  = 'store_true'
         )
     cmd.add_argument \
+        ( '--plot-hardness'
+        , action  = 'store_true'
+        )
+    cmd.add_argument \
         ( '-r', '--random-seed'
         , type    = int
         , default = 42
@@ -1407,6 +1563,9 @@ if __name__ == '__main__' :
     if args.plot_zone_factor :
         z = Zone_Factor ([30, 30])
         z.plot_zone_factor ()
+    elif args.plot_hardness :
+        m = Material ('', Material.HRC, 'tempered', 0, 0, 0, 0, 1000, 1000, 1)
+        m.plot_hardness ()
     elif args.check :
         go = Gear_Optimizer (args)
         z  = [int (i) for i in args.check.split (',')]

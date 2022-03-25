@@ -7,11 +7,11 @@ from argparse import ArgumentParser
 from math import gcd, atan, acos
 from bisect import bisect_right, bisect_left
 from involute import inv_involute_apsol4 as inv_involute
-from corr import yfa, ysa
+from corr import yfa, ysa, Fit_Curve, curve_fit
 import pga
 import sys
 
-class Material :
+class Material (Fit_Curve) :
     """ Note on hardness: Brinell hardness can either be measured with a
         standardized ball or with a tungsten carbide ball. The latter
         starts to differ from the measurements with the standard ball at
@@ -68,6 +68,7 @@ class Material :
         , sigma_h_lim_min, sigma_h_lim_max
         , cost_factor
         ) :
+        self.__super.__init__ ()
         self.name               = name
         self.material_type      = material_type
         self.unit               = unit
@@ -86,6 +87,16 @@ class Material :
     def hardness (self) :
         return (self.hardness_min + self.hardness_max) / 2
     # end def hardness
+
+    @property
+    def sigma_f_lim (self) :
+        return (self.sigma_f_lim_min + self.sigma_f_lim_max) / 2
+    # end def sigma_f_lim
+
+    @property
+    def sigma_h_lim (self) :
+        return (self.sigma_h_lim_min + self.sigma_h_lim_max) / 2
+    # end def sigma_h_lim
 
     hrc_table = \
         ( (30, ( 5.97,   104.7))
@@ -148,9 +159,12 @@ class Material :
             Currently we support only HRC (Rockwell Scale C)
         >>> HRC = Material.HRC
         >>> ni = 'nitrified'
-        >>> for hrc in range (20, 65) :
+        >>> for hrc in range (20, 66) :
         ...     m = Material ('', HRC, ni, hrc, hrc, 0, 0, 0, 0, 1)
-        ...     print ("%.0f %.2f" % (m.hardness, m.hardness_hb ()))
+        ...     hb = m.hardness_hb ()
+        ...     d  = dict ((m.hrc_tbl2))
+        ...     tb = d [hrc]
+        ...     print ("%.0f %.0f %+.1f" % (m.hardness, hb, hb - tb))
         20 226
         21 231
         22 237
@@ -207,8 +221,6 @@ class Material :
             tbl = self.hrc_table
             k   = (h, (0, 0))
             idx = bisect_left (tbl, k)
-            if not 0 <= idx <= len (tbl) - 1 :
-                import pdb; pdb.set_trace ()
             assert 0 <= idx <= len (tbl) - 1
             assert h <= tbl [idx][0]
             a, c = tbl [idx][1]
@@ -226,17 +238,16 @@ class Material :
         z = np.array (y_comp) - y
         plt.plot (x, z)
         plt.show ()
+        yy = []
+        for xx in x :
+            yy.append (self._fitted_function (xx))
+        yy = np.array (yy)
+        plt.plot (x, y)
+        plt.plot (x, yy)
+        plt.show ()
+        plt.plot (x, yy - y)
+        plt.show ()
     # end def plot_hardness
-
-    @property
-    def sigma_f_lim (self) :
-        return (self.sigma_f_lim_min + self.sigma_f_lim_max) / 2
-    # end def sigma_f_lim
-
-    @property
-    def sigma_h_lim (self) :
-        return (self.sigma_h_lim_min + self.sigma_h_lim_max) / 2
-    # end def sigma_h_lim
 
     def psi_dlim (self, shaft_bearing = 'asymmetrical') :
         """ Compute *maximum* psi_d from given shaft bearing
@@ -384,6 +395,20 @@ class Material :
             r = m
         return r
     # end def y_beta
+
+    def _fit (x, a, b, c, d, e, f, g, h, i, j, k) :
+        """ Currently severely overfitted.
+            Looks like the given values are simply too noisy to fit
+            better than with error 2-4 or so.
+        """
+        #return (a*x**2 + b*x + c/x + d)
+        return ( (a*x + b*x**2 + c*x**3 + d*x**4 + e*x**5)
+               / (f + g*x + h*x**2 + i*x**3 + j*x**4 + k*x**5)
+               )
+    # end def _fit
+
+    hrc_tbl_x, hrc_tbl_y = np.array (hrc_tbl2).T
+    fit_params, dummy = curve_fit (_fit, hrc_tbl_x, hrc_tbl_y)
 
 # end class Material
 

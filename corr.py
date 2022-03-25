@@ -10,19 +10,20 @@ class Fit_Curve (autosuper) :
         self._fit = staticmethod (self.__class__._fit).__get__ (autosuper)
     # end def __init__
 
-    def __call__ (self, x, a = None, b = None, c = None) :
-        if a is None :
-            a = self.a
-        if b is None :
-            b = self.b
-        if c is None :
-            c = self.c
-        return self._fit (x, a, b, c)
-    # end def __call__
-
+    def _fitted_function (self, x, *params) :
+        if not params :
+            params = self.fit_params
+        return self._fit (x, *params)
+    # end def _fitted_function
 # end class Fit_Curve
 
-class YFA (Fit_Curve) :
+class Callable_Fit_Curve (Fit_Curve) :
+    def __call__ (self, x, *params) :
+        return self._fitted_function (x, *params)
+    # end def __call__
+# end class Callable_Fit_Curve
+
+class YFA (Callable_Fit_Curve) :
     yfa_table = np.array \
        (( (17,  3.08)
         , (18,  3.025)
@@ -56,11 +57,11 @@ class YFA (Fit_Curve) :
         return a * x ** 2 + b * (1/x) + c
     # end def _fit
 
-    (a, b, c), dummy = curve_fit (_fit, yfa_x, yfa_y)
+    fit_params, dummy = curve_fit (_fit, yfa_x, yfa_y)
 
 # end class YFA
 
-class YSA (Fit_Curve) :
+class YSA (Callable_Fit_Curve) :
     ysa_table = np.array \
        (( (17,  1.57)
         , (18,  1.58)
@@ -86,7 +87,7 @@ class YSA (Fit_Curve) :
         return a * np.log (x) + b * x + c
     # end def _fit
 
-    (a, b, c), dummy = curve_fit (_fit, ysa_x, ysa_y)
+    fit_params, dummy = curve_fit (_fit, ysa_x, ysa_y)
 
 # end class YSA
 

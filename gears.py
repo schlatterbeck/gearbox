@@ -232,15 +232,20 @@ class Material (Fit_Curve) :
             return h * a + c
     # end def hardness_hb
 
-    def material_combination_factor (self) :
+    def material_combination_factor (self, other) :
         """ Z_W
             Material combination factor
             Werkstoffpaarungsfaktor
-        >>> tt = 'tempered'
-        >>> HB = Material.HB
+        >>> tt  = 'tempered'
+        >>> ni  = 'nitrified'
+        >>> HB  = Material.HB
+        >>> HRC = Material.HRC
+        >>> om  = Material ('', HRC, ni, 1000, 1000, 0, 0, 0, 0, 1)
+        >>> print ("%.3f" % om.material_combination_factor (om))
+        1.000
         >>> for hb in 120, 130, 150, 200, 250, 300, 350, 400, 450, 470, 500 :
         ...     m = Material ('', HB, tt, hb, hb, 0, 0, 0, 0, 1)
-        ...     print ("%.3f" % m.material_combination_factor ())
+        ...     print ("%.3f" % m.material_combination_factor (om))
         1.200
         1.200
         1.188
@@ -253,8 +258,11 @@ class Material (Fit_Curve) :
         1.000
         1.000
         """
-        if self.is_hardened :
+        is_h = [self.is_hardened, other.is_hardened]
+        if is_h [0] == is_h [1] :
             return 1.0
+        if self.is_hardened :
+            return other.material_combination_factor (self)
         hb = self.hardness_hb ()
         if hb < 130 :
             return 1.2
@@ -977,13 +985,10 @@ class Gear (Zone_Factor) :
         m_n      = self.normalmodul
         Z_X      = [m.size_factor_flank (m_n) for m in self.materials]
         Z_X      = sum (Z_X) / 2
-        # Set to default
-        self.Z_W = Z_W = 1.0
-        # Now if one of the two wheels in hardened and the other is not:
-        is_h = [x.is_hardened for x in self.materials]
-        if is_h [0] != is_h [1] :
-            soft = m [0] if is_h [0] else m [1]
-            self.Z_W = Z_W = soft.material_combination_factor ()
+        # This does the correct thing (using the softer material) no
+        # matter which is called
+        self.Z_W = Z_W = self.materials [0].material_combination_factor \
+            (self.materials [1])
         Z_LVR    = 0.92
         sigma_HP = np.array ([m.sigma_h_lim for m in self.materials]) \
                    * Z_NT * Z_X * Z_W * Z_LVR

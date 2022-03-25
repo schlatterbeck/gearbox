@@ -84,6 +84,11 @@ class Material (Fit_Curve) :
     # end def __init__
 
     @property
+    def is_hardened (self) :
+        return self.material_type in ('case_hardened', 'nitrified')
+    # end def is_hardened
+
+    @property
     def hardness (self) :
         return (self.hardness_min + self.hardness_max) / 2
     # end def hardness
@@ -106,7 +111,7 @@ class Material (Fit_Curve) :
         , (65, (17.515, -401.0))
         )
     hrc_tbl2 = \
-        ( (20, 226)
+        ( (20, 224)
         , (21, 231)
         , (22, 237)
         , (23, 243)
@@ -165,52 +170,52 @@ class Material (Fit_Curve) :
         ...     d  = dict ((m.hrc_tbl2))
         ...     tb = d [hrc]
         ...     print ("%.0f %.0f %+.1f" % (m.hardness, hb, hb - tb))
-        20 226
-        21 231
-        22 237
-        23 243
-        24 247
-        25 253
-        26 258
-        27 264
-        28 271
-        29 279
-        30 286
-        31 294
-        32 301
-        33 311
-        34 319
-        35 327
-        36 336
-        37 344
-        38 353
-        39 362
-        40 371
-        41 381
-        42 390
-        43 400
-        44 409
-        45 421
-        46 432
-        47 443
-        48 455
-        49 469
-        50 481
-        51 496
-        52 512
-        53 525
-        54 543
-        55 560
-        56 577
-        57 595
-        58 615
-        59 634
-        60 654
-        61 670
-        62 688
-        63 705
-        64 722
-        65 739
+        20 224 +0.1
+	21 230 -0.9
+	22 236 -1.0
+	23 242 -1.0
+	24 248 +1.0
+	25 254 +0.9
+	26 260 +1.9
+	27 266 +1.9
+	28 272 +0.9
+	29 278 -1.2
+	30 284 -2.2
+	31 293 -0.7
+	32 302 +0.8
+	33 310 -0.6
+	34 319 -0.0
+	35 328 +0.6
+	36 336 +0.1
+	37 345 +0.7
+	38 353 +0.3
+	39 362 -0.2
+	40 370 -0.6
+	41 378 -3.1
+	42 389 -1.0
+	43 400 +0.2
+	44 411 +2.4
+	45 423 +1.5
+	46 434 +1.7
+	47 445 +1.8
+	48 456 +1.0
+	49 467 -1.9
+	50 478 -2.7
+	51 492 -3.7
+	52 510 -2.2
+	53 527 +2.3
+	54 545 +1.8
+	55 562 +2.3
+	56 580 +2.8
+	57 597 +2.4
+	58 615 -0.1
+	59 632 -1.6
+	60 650 -4.1
+	61 667 -2.6
+	62 685 -3.1
+	63 702 -2.6
+	64 720 -2.0
+	65 737 -1.5
         """
         if h is None :
             h = self.hardness
@@ -226,6 +231,37 @@ class Material (Fit_Curve) :
             a, c = tbl [idx][1]
             return h * a + c
     # end def hardness_hb
+
+    def material_combination_factor (self) :
+        """ Z_W
+            Material combination factor
+            Werkstoffpaarungsfaktor
+        >>> tt = 'tempered'
+        >>> HB = Material.HB
+        >>> for hb in 120, 130, 150, 200, 250, 300, 350, 400, 450, 470, 500 :
+        ...     m = Material ('', HB, tt, hb, hb, 0, 0, 0, 0, 1)
+        ...     print ("%.3f" % m.material_combination_factor ())
+        1.200
+        1.200
+        1.188
+        1.159
+        1.129
+        1.100
+        1.071
+        1.041
+        1.012
+        1.000
+        1.000
+        """
+        if self.is_hardened :
+            return 1.0
+        hb = self.hardness_hb ()
+        if hb < 130 :
+            return 1.2
+        if hb > 470 :
+            return 1.0
+        return 1.2 - (hb - 130) / 1700
+    # end def material_combination_factor
 
     def plot_hardness (self) :
         x, y = np.array (self.hrc_tbl2).T
@@ -941,7 +977,13 @@ class Gear (Zone_Factor) :
         m_n      = self.normalmodul
         Z_X      = [m.size_factor_flank (m_n) for m in self.materials]
         Z_X      = sum (Z_X) / 2
-        Z_W      = 1.09 # FIXME
+        # Set to default
+        self.Z_W = Z_W = 1.0
+        # Now if one of the two wheels in hardened and the other is not:
+        is_h = [x.is_hardened for x in self.materials]
+        if is_h [0] != is_h [1] :
+            soft = m [0] if is_h [0] else m [1]
+            self.Z_W = Z_W = soft.material_combination_factor ()
         Z_LVR    = 0.92
         sigma_HP = np.array ([m.sigma_h_lim for m in self.materials]) \
                    * Z_NT * Z_X * Z_W * Z_LVR
@@ -1092,6 +1134,8 @@ class Gearbox :
     sigma_F0: 28.9547 26.8115
     >>> print ("S_H: %.4f %.4f" % tuple (g0.S_H))
     S_H: 1.093 1.049
+    >>> print ("Z_W: %.4f" % g0.Z_W)
+    Z_W: 1.09 # FIXME
 
     >>> print ("T_ges: %.4f" % g1.T_ges)
     T_ges: 955788.7945
@@ -1143,6 +1187,8 @@ class Gearbox :
     sigma_F0: 44.9736 41.9209
     >>> print ("S_H: %.4f %.4f" % tuple (g1.S_H))
     S_H: 1.11 1.056
+    >>> print ("Z_W: %.4f" % g1.Z_W)
+    Z_W: 1.09 # FIXME
 
     >>> print ("s_z: %.4f %.4f"  % tuple (gb.s_z))
     s_z: 12.0000 18.0000

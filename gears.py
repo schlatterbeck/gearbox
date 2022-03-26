@@ -1045,9 +1045,11 @@ class Gear (Zone_Factor) :
     # end def hertz_pressure
 
     def gewaltbruchsicherheit (self) :
-        Y_S = self.Y_Sa * (0.6 + 0.4 * self.epsilon_alphan)
+        self.Y_S = Y_S = self.Y_Sa * (0.6 + 0.4 * self.epsilon_alphan)
         Y_deltarel_Tstat = 0.2 + 0.4 * Y_S
-        sigma_FGstat = self.sigma_FE * Y_deltarel_Tstat * self.gb.Y_NT
+        Y_NTG = 2.5
+        self.sigma_FGstat = sigma_FGstat = \
+            self.sigma_FE * Y_deltarel_Tstat * Y_NTG
         self.S_G = S_G = sigma_FGstat / self.sigma_F
     # end def gewaltbruchsicherheit
 
@@ -1225,6 +1227,8 @@ class Gearbox :
     sigma_H: 690.4858
     >>> print ("S_H: %.4f %.4f" % tuple (g0.S_H))
     S_H: 1.0788 1.0350
+    >>> print ("S_G: %.4f %.4f" % tuple (g0.S_G))
+    S_G: 3.7492 4.5991
 
     >>> print ("T_ges: %.4f" % g1.T_ges)
     T_ges: 955788.7945
@@ -1294,12 +1298,16 @@ class Gearbox :
     sigma_F0: 44.9736 41.9209
     >>> print ("sigma_F: %.4f %.4f" % tuple (g1.sigma_F))
     sigma_F: 143.3960 133.6627
+    >>> print ("Z_X: %.4f" % g1.Z_X)
+    Z_X: 1.0000
+    >>> print ("Z_W: %.4f" % g1.Z_W)
+    Z_W: 1.0882
     >>> print ("S_F: %.4f %.4f" % tuple (g1.S_F))
     S_F: 2.1315 2.2124
     >>> print ("S_H: %.4f %.4f" % tuple (g1.S_H))
     S_H: 1.0815 1.0293
-    >>> print ("Z_W: %.4f" % g1.Z_W)
-    Z_W: 1.0882
+    >>> print ("S_G: %.4f %.4f" % tuple (g1.S_G))
+    S_G: 5.4923 6.4781
 
     >>> print ("s_z: %.4f %.4f"  % tuple (gb.s_z))
     s_z: 12.0000 18.0000

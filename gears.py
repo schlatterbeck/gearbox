@@ -1524,106 +1524,6 @@ class Gearbox :
         return 2 - self.gears [1].submersion_factor
     # end def constrain_submersion_lower_bound
 
-    def constrain_S_G_0_g0 (self) :
-        return self.gears [0].constrain_S_G_0 ()
-    # end def constrain_S_G_0_g0
-
-    def constrain_S_G_0_g1 (self) :
-        return self.gears [1].constrain_S_G_0 ()
-    # end def constrain_S_G_0_g1
-
-    def constrain_S_G_1_g0 (self) :
-        return self.gears [0].constrain_S_G_1 ()
-    # end def constrain_S_G_1_g0
-
-    def constrain_S_G_1_g1 (self) :
-        return self.gears [1].constrain_S_G_1 ()
-    # end def constrain_S_G_1_g1
-
-    def constrain_S_H_min_0_g0 (self) :
-        return self.gears [0].constrain_S_H_min_0 ()
-    # end def constrain_S_H_min_0_g0
-
-    def constrain_S_H_min_0_g1 (self) :
-        return self.gears [1].constrain_S_H_min_0 ()
-    # end def constrain_S_H_min_0_g1
-
-    def constrain_S_H_min_1_g0 (self) :
-        return self.gears [0].constrain_S_H_min_1 ()
-    # end def constrain_S_H_min_1_g0
-
-    def constrain_S_H_min_1_g1 (self) :
-        return self.gears [1].constrain_S_H_min_1 ()
-    # end def constrain_S_H_min_1_g1
-
-    def constrain_S_H_max_0_g0 (self) :
-        return self.gears [0].constrain_S_H_max_0 ()
-    # end def constrain_S_H_max_0_g0
-
-    def constrain_S_H_max_0_g1 (self) :
-        return self.gears [1].constrain_S_H_max_0 ()
-    # end def constrain_S_H_max_0_g1
-
-    def constrain_S_H_max_1_g0 (self) :
-        return self.gears [0].constrain_S_H_max_1 ()
-    # end def constrain_S_H_max_1_g0
-
-    def constrain_S_H_max_1_g1 (self) :
-        return self.gears [1].constrain_S_H_max_1 ()
-    # end def constrain_S_H_max_1_g1
-
-    def constrain_S_F_min_0_g0 (self) :
-        return self.gears [0].constrain_S_F_min_0 ()
-    # end def constrain_S_H_min_0_g0
-
-    def constrain_S_F_min_0_g1 (self) :
-        return self.gears [1].constrain_S_F_min_0 ()
-    # end def constrain_S_H_min_0_g1
-
-    def constrain_S_F_min_1_g0 (self) :
-        return self.gears [0].constrain_S_F_min_1 ()
-    # end def constrain_S_H_min_1_g0
-
-    def constrain_S_F_min_1_g1 (self) :
-        return self.gears [1].constrain_S_F_min_1 ()
-    # end def constrain_S_H_min_1_g1
-
-    def constrain_S_F_max_0_g0 (self) :
-        return self.gears [0].constrain_S_F_max_0 ()
-    # end def constrain_S_H_max_0
-
-    def constrain_S_F_max_0_g1 (self) :
-        return self.gears [1].constrain_S_F_max_0 ()
-    # end def constrain_S_H_max_1
-
-    def constrain_S_F_max_1_g0 (self) :
-        return self.gears [0].constrain_S_F_max_1 ()
-    # end def constrain_S_H_max_1_g0
-
-    def constrain_S_F_max_1_g1 (self) :
-        return self.gears [1].constrain_S_F_max_1 ()
-    # end def constrain_S_H_max_1_g1
-
-    def constrain_v_0 (self) :
-        return self.gears [0].constrain_v ()
-    # end def constrain_v_0
-
-    def constrain_v_1 (self) :
-        return self.gears [1].constrain_v ()
-    # end def constrain_v_1
-
-    def constrain_epsilon_beta (self) :
-        return self.gears [0].constrain_epsilon_beta ()
-    # end def constrain_epsilon_beta
-
-    def constrain_epsilon_alphan_0 (self) :
-        return self.gears [0].constrain_epsilon_alphan ()
-    # end def constrain_epsilon_alphan_0
-
-    def constrain_epsilon_alphan_1 (self) :
-        return self.gears [1].constrain_epsilon_alphan ()
-    # end def constrain_epsilon_alphan_1
-
 # end class Gearbox
 
 class Gear_Optimizer (pga.PGA, autosuper) :
@@ -1720,10 +1620,15 @@ class Gear_Optimizer (pga.PGA, autosuper) :
         # Compute number of constraint-methods in Gearbox
         num_constraint = 2
         self.constraints = []
+        self.gear_constr = []
         for n in Gearbox.__dict__ :
             if n.startswith ('constrain_') :
                 num_constraint += 1
                 self.constraints.append (n)
+        for n in Gear.__dict__ :
+            if n.startswith ('constrain_') :
+                num_constraint += 2
+                self.gear_constr.append (n)
         d = dict \
             ( maximize             = False
             , num_eval             = 3 + num_constraint
@@ -1775,16 +1680,17 @@ class Gear_Optimizer (pga.PGA, autosuper) :
 
     def evaluate (self, p, pop) :
         gb   = self.phenotype (p, pop)
-        g    = gb.gears
-        z    = []
-        z.extend (g [0].z)
-        z.extend (g [1].z)
+        z    = list (gb.gears [0].z) + list (gb.gears [1].z)
         gc   = gcd (* z [:2]) + gcd (*z [2:])
         ferr = (self.factor - gb.factor) ** 2
         ret  = [ferr, gb.cost, gb.l_Gi, self.err (*z) - 1.5, gc - 2]
         for n in self.constraints :
             m = getattr (gb, n)
             ret.append (m ())
+        for n in self.gear_constr :
+            for g in gb.gears :
+                m = getattr (g, n)
+                ret.append (m ())
         return ret
     # end def evaluate
 

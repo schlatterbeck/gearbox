@@ -240,7 +240,7 @@ class Material (Fit_Curve) :
         >>> ni  = 'nitrified'
         >>> HB  = Material.HB
         >>> HRC = Material.HRC
-        >>> om  = Material ('', HRC, ni, 1000, 1000, 0, 0, 0, 0, 1)
+        >>> om  = Material ('', HRC, ni, 65, 65, 0, 0, 0, 0, 1)
         >>> print ("%.3f" % om.material_combination_factor (om))
         1.000
         >>> for hb in 120, 130, 150, 200, 250, 300, 350, 400, 450, 470, 500 :
@@ -261,7 +261,9 @@ class Material (Fit_Curve) :
         is_h = [self.is_hardened, other.is_hardened]
         if is_h [0] == is_h [1] :
             return 1.0
-        if self.is_hardened :
+        if self.hardness_hb () == other.hardness_hb () :
+            return 1.0
+        if self.hardness_hb () > other.hardness_hb () :
             return other.material_combination_factor (self)
         hb = self.hardness_hb ()
         if hb < 130 :

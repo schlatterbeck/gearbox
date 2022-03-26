@@ -1631,7 +1631,7 @@ class Gear_Optimizer (pga.PGA, autosuper) :
                 self.gear_constr.append (n)
         d = dict \
             ( maximize             = False
-            , num_eval             = 3 + num_constraint
+            , num_eval             = 5 + num_constraint
             , num_constraint       = num_constraint
             , sum_constraints      = True
             , pop_size             = 100
@@ -1683,7 +1683,10 @@ class Gear_Optimizer (pga.PGA, autosuper) :
         z    = list (gb.gears [0].z) + list (gb.gears [1].z)
         gc   = gcd (* z [:2]) + gcd (*z [2:])
         ferr = (self.factor - gb.factor) ** 2
-        ret  = [ferr, gb.cost, gb.l_Gi, self.err (*z) - 1.5, gc - 2]
+        ret  = [ ferr, gb.cost, gb.l_Gi
+               , gb.gears [0].normalmodul, gb.gears [1].normalmodul
+               ]
+        ret.extend ([self.err (*z) - 1.5, gc - 2])
         for n in self.constraints :
             m = getattr (gb, n)
             ret.append (m ())

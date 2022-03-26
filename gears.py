@@ -258,9 +258,9 @@ class Material (Fit_Curve) :
         1.000
         1.000
         """
-        is_h = [self.is_hardened, other.is_hardened]
-        if is_h [0] == is_h [1] :
-            return 1.0
+        #is_h = [self.is_hardened, other.is_hardened]
+        #if is_h [0] == is_h [1] :
+        #    return 1.0
         if self.hardness_hb () == other.hardness_hb () :
             return 1.0
         if self.hardness_hb () > other.hardness_hb () :
@@ -871,6 +871,44 @@ class Gear (Zone_Factor) :
         self.a = sum (self.D_R) / 2
     # end def __init__
 
+    gfk1_beta0 = dict \
+        (( ( 6,   9.6)
+         , ( 7,  15.3)
+         , ( 8,  24.5)
+         , ( 9,  34.5)
+         , (10,  53.5)
+         , (11,  76.6)
+         , (12, 122.5)
+        ))
+    gfk1_betanonnull = dict \
+        (( ( 6,   8.5)
+         , ( 7,  13.6)
+         , ( 8,  21.8)
+         , ( 9,  30.7)
+         , (10,  47.7)
+         , (11,  68.2)
+         , (12, 109.1)
+        ))
+    def gear_factor_k1 (self) :
+        if self.beta == 0 :
+            return self.gfk1_beta0       [self.din_quality]
+        else :
+            return self.gfk1_betanonnull [self.din_quality]
+    # end def gear_factor_k1
+
+    gfqh = dict \
+        (( ( 6,  1.32)
+         , ( 7,  1.85)
+         , ( 8,  2.59)
+         , ( 9,  4.01)
+         , (10,  6.22)
+         , (11,  9.63)
+         , (12, 14.9)
+        ))
+    def gear_factor_qh (self) :
+        return self.gfqh [self.din_quality]
+    # end def gear_factor_qh
+
     @property
     def out_T_ges (self) :
         return self.T_ges * self.u_tat
@@ -902,15 +940,15 @@ class Gear (Zone_Factor) :
         m_n       = self.normalmodul
         # S. 1317 (323-4) TB 21-20d
         Y_X       = [m.size_factor_tooth (m_n) for m in self.materials]
-        Y_X       = sum (Y_X) / 2
-        K_Ft      = self.shaft.F_t / self.b_rad
+        self.Y_X  = Y_X = sum (Y_X) / 2
+        self.K_Ft = K_Ft = self.shaft.F_t / self.b_rad
         # S. 1310 (316) TB 21.14
-        K_1       = 8.5
+        self.K_1  = K_1 = self.gear_factor_k1 ()
         # S. 1310 (316) TB 21.14
         # Geradverzahnung vs. Schrägverzahnung: Different value for K_2
         # depending on self.beta.
-        K_2       = 0.0087 if self.beta != 0 else 0.0193
-        K_3       = \
+        self.K_2  = K_2 = 0.0087 if self.beta != 0 else 0.0193
+        self.K_3  = K_3 = \
             ( 0.01 * self.z [0] * self.v
             * np.sqrt (self.u_tat ** 2 / (1 + self.u_tat) ** 2)
             )
@@ -931,12 +969,16 @@ class Gear (Zone_Factor) :
         F_betay   = F_betax - y_beta
         K_Hbeta1  = 1 + 10 * F_betay / K_Fm
         K_Hbeta2  = 2 * np.sqrt (10 * F_betay / K_Fm)
-        K_Hbeta   = K_Hbeta1 if K_Hbeta1 <= 2 else K_Hbeta2
-        h         = (self.D_K - self.D_F) / 2
-        K_bh      = self.b_rad / h
-        N_F       = K_bh ** 2 / (1 + K_bh + K_bh ** 2)
-        K_Fbeta   = K_Hbeta ** N_F
-        K_Fges    = self.gb.K_A * K_v * self.epsilon_alphan * K_Fbeta
+        self.K_Hbeta = K_Hbeta = K_Hbeta1 if K_Hbeta1 <= 2 else K_Hbeta2
+        h         = (self.D_K [0] - self.D_F [0]) / 2
+        self.K_bh = K_bh = self.b_rad / h
+        self.N_F  = N_F = K_bh ** 2 / (1 + K_bh + K_bh ** 2)
+        self.K_Fbeta = K_Fbeta  = K_Hbeta ** N_F
+        if self.beta == 0 :
+            self.K_Fges = K_Fges = self.gb.K_A * K_v * K_Fbeta
+        else :
+            self.K_Fges = K_Fges = \
+                self.gb.K_A * K_v * self.epsilon_alphan * K_Fbeta
         b         = np.array ([self.b, self.b_rad])
         # Y_beta holds for beta < 30° (and is set to 30° in the
         # following formula, see DIN 3990 part 41 p. 13
@@ -963,20 +1005,16 @@ class Gear (Zone_Factor) :
     def hertz_pressure (self) :
         """ Hertzsche Pressung
         """
-        Z_beta   = np.sqrt (np.cos (self.beta))
-        Z_eps1   = np.sqrt ( (4 - self.epsilon_alpha) / 3
-                           * (1 - self.epsilon_beta)
-                           + self.epsilon_beta / self.epsilon_alpha
-                           )
-        Z_eps2   = np.sqrt (1 / self.epsilon_alpha)
-        Z_eps    = Z_eps1 if Z_eps1 < 1 else Z_eps2
-        Z_H      = np.sqrt ( 2 * np.cos (self.beta)
-                           / ( np.cos (self.alpha_t) ** 2
-                             * np.tan (self.alpha_t)
-                             )
-                           )
-        sigma_H0 = \
-            ( self.Z_E * Z_H * Z_eps * Z_beta
+        self.Z_beta = Z_beta = np.sqrt (np.cos (self.beta))
+        self.Z_eps1 = Z_eps1 = np.sqrt \
+            ( (4 - self.epsilon_alpha) / 3
+            * (1 - self.epsilon_beta)
+            + self.epsilon_beta / self.epsilon_alpha
+            )
+        self.Z_eps2 = Z_eps2 = np.sqrt (1 / self.epsilon_alpha)
+        self.Z_eps  = Z_eps  = Z_eps1 if Z_eps1 < 1 else Z_eps2
+        self.sigma_H0 = sigma_H0 = \
+            ( self.Z_E * self.Z_H * Z_eps * Z_beta
             * np.sqrt ( self.F_tbase
                       / (self.b_rad * self.D_R [0])
                       * (self.u_tat + 1) / self.u_tat
@@ -986,16 +1024,22 @@ class Gear (Zone_Factor) :
         # S. 1317 (323-4) TB 21-20d
         m_n      = self.normalmodul
         Z_X      = [m.size_factor_flank (m_n) for m in self.materials]
-        Z_X      = sum (Z_X) / 2
+        self.Z_X = Z_X = sum (Z_X) / 2
         # This does the correct thing (using the softer material) no
         # matter which is called
         self.Z_W = Z_W = self.materials [0].material_combination_factor \
             (self.materials [1])
         Z_LVR    = 0.92
-        sigma_HP = np.array ([m.sigma_h_lim for m in self.materials]) \
-                   * Z_NT * Z_X * Z_W * Z_LVR
-        K_H      = np.sqrt (self.gb.K_A * self.K_v * self.epsilon_alphan)
-        sigma_H  = sigma_H0 * K_H
+        self.sigma_HP = sigma_HP = \
+            ( np.array ([m.sigma_h_lim for m in self.materials])
+            * Z_NT * Z_X * Z_W * Z_LVR
+            )
+        if self.beta == 0 :
+            self.K_H = K_H = np.sqrt (self.gb.K_A * self.K_Hbeta * self.K_v)
+        else :
+            self.K_H = K_H = np.sqrt \
+                (self.gb.K_A * self.K_Hbeta * self.K_v * self.epsilon_alphan)
+        self.sigma_H = sigma_H = sigma_H0 * K_H
 
         self.S_H = sigma_HP / sigma_H
     # end def hertz_pressure
@@ -1129,20 +1173,58 @@ class Gearbox :
     epsilon_alphan: 1.7414
     >>> print ("epsilon_beta: %.4f" % g0.epsilon_beta)
     epsilon_beta: 1.9181
+    >>> print ("N_F: %.4f" % g0.N_F)
+    N_F: 0.8860
+    >>> print ("K_Fbeta: %.4f" % g0.K_Fbeta)
+    K_Fbeta: 2.0394
+    >>> print ("K_Fges: %.4f" % g0.K_Fges)
+    K_Fges: 7.0238
     >>> print ("Y_Fa: %.3f %.3f" % tuple (g0.Y_Fa))
     Y_Fa: 2.956 2.214
     >>> print ("Y_Sa: %.3f %.3f" % tuple (g0.Y_Sa))
     Y_Sa: 1.591 1.918
+    >>> print ("Y_X: %.4f" % g0.Y_X)
+    Y_X: 1.0000
+    >>> print ("K_Ft: %.4f" % g0.K_Ft)
+    K_Ft: 65.4717
+    >>> print ("K_1: %.4f" % g0.K_1)
+    K_1: 8.5000
+    >>> print ("K_2: %.4f" % g0.K_2)
+    K_2: 0.0087
+    >>> print ("K_3: %.4f" % g0.K_3)
+    K_3: 2.2995
+    >>> print ("K_v: %.4f" % g0.K_v)
+    K_v: 1.3185
     >>> print ("y_beta: %.3f" % g0.y_beta)
     y_beta: 8.527
     >>> print ("f_Hbeta: %d" % g0.f_Hbeta)
     f_Hbeta: 10
     >>> print ("sigma_F0: %.4f %.4f" % tuple (g0.sigma_F0))
     sigma_F0: 28.9547 26.8115
-    >>> print ("S_H: %.4f %.4f" % tuple (g0.S_H))
-    S_H: 1.093 1.049
+    >>> print ("sigma_F: %.4f %.4f" % tuple (g0.sigma_F))
+    sigma_F: 203.3721 188.3186
+    >>> print ("S_F: %.4f %.4f" % tuple (g0.S_F))
+    S_F: 1.4628 1.5399
+    >>> print ("Z_beta: %.4f" % g0.Z_beta)
+    Z_beta: 0.9752
+    >>> print ("Z_eps2: %.4f" % g0.Z_eps2)
+    Z_eps2: 0.7968
+    >>> print ("Z_eps: %.4f" % g0.Z_eps)
+    Z_eps: 0.6897
+    >>> print ("sigma_H0: %.4f" % g0.sigma_H0)
+    sigma_H0: 248.8586
+    >>> print ("Z_X: %.4f" % g0.Z_X)
+    Z_X: 1.0000
     >>> print ("Z_W: %.4f" % g0.Z_W)
-    Z_W: 1.09 # FIXME
+    Z_W: 1.0941
+    >>> print ("sigma_HP: %.4f %.4f" % tuple (g0.sigma_HP))
+    sigma_HP: 744.8753 714.6776
+    >>> print ("K_H: %.4f" % g0.K_H)
+    K_H: 2.7746
+    >>> print ("sigma_H: %.4f" % g0.sigma_H)
+    sigma_H: 690.4858
+    >>> print ("S_H: %.4f %.4f" % tuple (g0.S_H))
+    S_H: 1.0788 1.0350
 
     >>> print ("T_ges: %.4f" % g1.T_ges)
     T_ges: 955788.7945
@@ -1182,20 +1264,42 @@ class Gearbox :
     epsilon_alphan: 1.6941
     >>> print ("epsilon_beta: %.4f" % g1.epsilon_beta)
     epsilon_beta: 0.0000
+    >>> print ("N_F: %.4f" % g1.N_F)
+    N_F: 0.8869
+    >>> print ("K_Fbeta: %.4f" % g1.K_Fbeta)
+    K_Fbeta: 1.9107
+    >>> print ("K_Fges: %.4f" % g1.K_Fges)
+    K_Fges: 3.1884
     >>> print ("Y_Fa: %.3f %.3f" % tuple (g1.Y_Fa))
     Y_Fa: 2.865 2.245
     >>> print ("Y_Sa: %.3f %.3f" % tuple (g1.Y_Sa))
     Y_Sa: 1.613 1.887
+    >>> print ("Y_X: %.4f" % g1.Y_X)
+    Y_X: 0.9940
+    >>> print ("K_Ft: %.4f" % g1.K_Ft)
+    K_Ft: 128.5699
+    >>> print ("K_1: %.4f" % g1.K_1)
+    K_1: 15.3000
+    >>> print ("K_2: %.4f" % g1.K_2)
+    K_2: 0.0193
+    >>> print ("K_3: %.4f" % g1.K_3)
+    K_3: 0.8134
+    >>> print ("K_v: %.4f" % g1.K_v)
+    K_v: 1.1125
     >>> print ("y_beta: %.3f" % g1.y_beta)
     y_beta: 11.242
     >>> print ("f_Hbeta: %d" % g1.f_Hbeta)
     f_Hbeta: 16
     >>> print ("sigma_F0: %.4f %.4f" % tuple (g1.sigma_F0))
     sigma_F0: 44.9736 41.9209
+    >>> print ("sigma_F: %.4f %.4f" % tuple (g1.sigma_F))
+    sigma_F: 143.3960 133.6627
+    >>> print ("S_F: %.4f %.4f" % tuple (g1.S_F))
+    S_F: 2.1315 2.2124
     >>> print ("S_H: %.4f %.4f" % tuple (g1.S_H))
-    S_H: 1.11 1.056
+    S_H: 1.0815 1.0293
     >>> print ("Z_W: %.4f" % g1.Z_W)
-    Z_W: 1.09 # FIXME
+    Z_W: 1.0882
 
     >>> print ("s_z: %.4f %.4f"  % tuple (gb.s_z))
     s_z: 12.0000 18.0000

@@ -869,7 +869,7 @@ class Gear (Zone_Factor) :
         self.d_RW = m_n * (z [0] - 2.5) / (1.1 * np.cos (self.beta))
         # d_W gibt maximalen Durchmesser Welle mit aufgestecktem Ritzel
         self.d_W  = m_n * (z [0] - 2.5) / (1.8 * np.cos (self.beta))
-        # Gehäuse Innenlänge
+        # Achsabstand
         self.a = sum (self.D_R) / 2
     # end def __init__
 
@@ -1105,7 +1105,7 @@ class Gear (Zone_Factor) :
     # end def constrain_v
 
     def constrain_epsilon_alphan (self) :
-        """ Normal-Profilüberdeckung zwischen [1.1,1.25]
+        """ Normal-Profilüberdeckung mindestens [1.1,1.25]
             min 1.1 better 1.25
         """
         return 1.25 - self.epsilon_alphan
@@ -1485,6 +1485,14 @@ class Gearbox :
 
     # end def __init__
 
+    @property
+    def cost (self) :
+        g = self.gears
+        return sum (( sum (m.cost_factor for m in g [0].materials)
+                    , sum (m.cost_factor for m in g [1].materials)
+                   ))
+    # end def cost
+
     def oil (self) :
         """ Öltauchschmierung hier tatsächlich wichtig beide Großräder
             zu beschreiben
@@ -1718,12 +1726,13 @@ class Gear_Optimizer (pga.PGA, autosuper) :
                 self.constraints.append (n)
         d = dict \
             ( maximize             = False
-            , num_eval             = 1 + num_constraint
+            , num_eval             = 3 + num_constraint
             , num_constraint       = num_constraint
-            , pop_size             = 30
-            , num_replace          = 30
+            , sum_constraints      = True
+            , pop_size             = 100
+            , num_replace          = 100
             , select_type          = pga.PGA_SELECT_LINEAR
-            , pop_replace_type     = pga.PGA_POPREPL_PAIRWISE_BEST
+            , pop_replace_type     = pga.PGA_POPREPL_NSGA_II
             , mutation_only        = True
             , mutation_type        = pga.PGA_MUTATION_DE
             , DE_crossover_prob    = 0.8
@@ -1772,7 +1781,7 @@ class Gear_Optimizer (pga.PGA, autosuper) :
         z.extend (g [1].z)
         gc   = gcd (* z [:2]) + gcd (*z [2:])
         ferr = (self.factor - gb.factor) ** 2
-        ret  = [ferr, self.err (*z) - 1, gc - 2]
+        ret  = [ferr, gb.cost, gb.l_Gi, self.err (*z) - 1.5, gc - 2]
         for n in self.constraints :
             m = getattr (gb, n)
             ret.append (m ())
@@ -1785,10 +1794,12 @@ class Gear_Optimizer (pga.PGA, autosuper) :
         for g in gb.gears :
             z.extend (g.z)
         print (z, file = file)
-        print ("Gear Error: %12.9f%%" % self.err (*z))
-        print ("Random seed: %d" % self.random_seed)
+        print ("Gear Error: %12.9f%%" % self.err (*z), file = file)
+        print ("Cost: %.3f" % gb.cost, file = file)
+        print ("Size: %.3f" % gb.l_Gi, file = file)
+        print ("Random seed: %d" % self.random_seed, file = file)
         for n in self.constraints :
-            print ("%s: %s" % (n, getattr (gb, n)()))
+            print ("%s: %s" % (n, getattr (gb, n)()), file = file)
         self.__super.print_string (file, p, pop)
     # end def print_string
 

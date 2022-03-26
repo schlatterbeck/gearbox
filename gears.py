@@ -1076,11 +1076,11 @@ class Gear (Zone_Factor) :
 class Gearbox :
     """ The gearbox with all the sub-parts
     >>> HB = Material.HB
-    >>> xx = 'tempered'
-    >>> m1 = Material ('', HB, xx, 0, 0, 0, 0, 740, 740, 1)
-    >>> m2 = Material ('', HB, xx, 0, 0, 0, 0, 710, 710, 1)
-    >>> m3 = Material ('', HB, xx, 0, 0, 0, 0, 777.5, 777.5, 1)
-    >>> m4 = Material ('', HB, xx, 0, 0, 0, 0, 740, 740, 1)
+    >>> t = 'tempered'
+    >>> m1 = Material ('QT30CrNiMo8',  HB, t, 320, 320, 240, 355, 610, 870, 2.4)
+    >>> m2 = Material ('QT34CrNiMo6',  HB, t, 310, 310, 235, 345, 580, 840, 2.4)
+    >>> m3 = Material ('QT36CrNiMo16', HB, t, 350, 350, 250, 365,  640,  915, 3)
+    >>> m4 = Material ('QT30CrNiMo8',  HB, t, 320, 320, 240, 355, 610, 870, 2.4)
     >>> m  = [m1, m2, m3, m4]
     >>> z = [19, 89, 21, 76]
     >>> beta = 18 * np.pi / 180

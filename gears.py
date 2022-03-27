@@ -1634,8 +1634,8 @@ class Gear_Optimizer (pga.PGA, autosuper) :
             , num_eval             = 5 + num_constraint
             , num_constraint       = num_constraint
             , sum_constraints      = True
-            , pop_size             = 100
-            , num_replace          = 100
+            , pop_size             = self.args.pop_size
+            , num_replace          = self.args.pop_size
             , select_type          = pga.PGA_SELECT_LINEAR
             , pop_replace_type     = pga.PGA_POPREPL_NSGA_II
             , mutation_only        = True
@@ -1645,7 +1645,7 @@ class Gear_Optimizer (pga.PGA, autosuper) :
             , DE_variant           = pga.PGA_DE_VARIANT_RAND
             , DE_scale_factor      = 0.85
             , init                 = minmax
-            , max_GA_iter          = 2000
+            , max_GA_iter          = self.args.generations
             , print_options        = [pga.PGA_REPORT_STRING]
             , mutation_bounce_back = True
             )
@@ -1682,8 +1682,7 @@ class Gear_Optimizer (pga.PGA, autosuper) :
         gb   = self.phenotype (p, pop)
         z    = list (gb.gears [0].z) + list (gb.gears [1].z)
         gc   = gcd (* z [:2]) + gcd (*z [2:])
-        ferr = (self.factor - gb.factor) ** 2
-        ret  = [ ferr, gb.cost, gb.l_Gi
+        ret  = [ self.err (*z), gb.cost, gb.l_Gi
                , gb.gears [0].normalmodul, gb.gears [1].normalmodul
                ]
         ret.extend ([self.err (*z) - 1.5, gc - 2])
@@ -1707,8 +1706,13 @@ class Gear_Optimizer (pga.PGA, autosuper) :
         print ("Cost: %.3f" % gb.cost, file = file)
         print ("Size: %.3f" % gb.l_Gi, file = file)
         print ("Random seed: %d" % self.random_seed, file = file)
-        for n in self.constraints :
-            print ("%s: %s" % (n, getattr (gb, n)()), file = file)
+        if self.args.verbose :
+            for n in self.constraints :
+                print ("%s: %s" % (n, getattr (gb, n)()), file = file)
+            for i, g in enumerate (gb.gears) :
+                for n in self.gear_constr :
+                    v = getattr (g, n)()
+                    print ("Gear %s %s: %s" % (i, n, v), file = file)
         self.__super.print_string (file, p, pop)
     # end def print_string
 
@@ -1719,6 +1723,12 @@ if __name__ == '__main__' :
     cmd.add_argument \
         ( '-c', '--check'
         , help    = "A comma-separated list of 4 integers for gears to check"
+        )
+    cmd.add_argument \
+        ( '-g', '--generations'
+        , type    = int
+        , help    = "Maximum number of generations, default=%(default)s"
+        , default = 2000
         )
     cmd.add_argument \
         ( '-l', '--min-tooth'
@@ -1741,7 +1751,7 @@ if __name__ == '__main__' :
         , default = 3510
         )
     cmd.add_argument \
-        ( '-p', '--plot-zone-factor'
+        ( '--plot-zone-factor'
         , action  = 'store_true'
         )
     cmd.add_argument \
@@ -1749,9 +1759,19 @@ if __name__ == '__main__' :
         , action  = 'store_true'
         )
     cmd.add_argument \
+        ( '-p', '--pop-size'
+        , type    = int
+        , help    = "Population size, default=%(default)s"
+        , default = 100
+        )
+    cmd.add_argument \
         ( '-r', '--random-seed'
         , type    = int
         , default = 42
+        )
+    cmd.add_argument \
+        ( '-v', '--verbose'
+        , action  = 'store_true'
         )
     args = cmd.parse_args ()
     if args.plot_zone_factor :

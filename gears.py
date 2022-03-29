@@ -1410,9 +1410,11 @@ class Gearbox :
     # Lebensdauerfaktor
     Y_NT = 1.0
 
-    def __init__ (self, materials, z, beta, n, delta_b, psi_m, x_1) :
+    def __init__ (self, materials, z, beta, n, delta_b, psi_m, x_1, **kw) :
         """ Note that n is minutes^-1
         """
+        if 'P' in kw :
+            self.P = kw ['P']
         self.submersion_factor = x_1
         assert len (z) == 4
         assert len (materials) == 4
@@ -1603,7 +1605,9 @@ class Gear_Optimizer (pga.PGA, autosuper) :
 
     def __init__ (self, args) :
         self.args   = args
-        self.factor = self.args.numerator / self.args.denominator
+        self.factor = ( self.args.input_rotation_speed
+                      / self.args.output_rotation_speed
+                      )
         # Teeth (4 parameters)
         minmax = [(self.args.min_tooth, self.args.max_tooth)] * 4
         # Material: Index into table "materials" above
@@ -1674,7 +1678,9 @@ class Gear_Optimizer (pga.PGA, autosuper) :
         x_1     = self.get_allele (p, pop, 9)
         delta_b = self.get_allele (p, pop, 10)
         psi_m   = [self.get_allele (p, pop, x) for x in (11, 12)]
-        g = Gearbox (mat, z, beta, self.args.numerator, delta_b, psi_m, x_1)
+        n_in    = self.args.input_rotation_speed
+        power   = self.args.power
+        g = Gearbox (mat, z, beta, n_in, delta_b, psi_m, x_1, P=power)
         return g
     # end def phenotype
 
@@ -1731,24 +1737,23 @@ if __name__ == '__main__' :
         , default = 2000
         )
     cmd.add_argument \
+        ( '-i', '--input-rotation-speed'
+        , help    = "Input rotation speed (Eingangs-Drehzahl) n_in, "
+                    "default=%(default)s"
+        , type    = float
+        , default = 3510
+        )
+    cmd.add_argument \
         ( '-l', '--min-tooth'
         , type    = int
         , default = 17
         )
     cmd.add_argument \
-        ( '-u', '--max-tooth'
-        , type    = int
-        , default = 200
-        )
-    cmd.add_argument \
-        ( '-d', '--denominator'
+        ( '-o', '--output-rotation-speed'
+        , help    = "Output rotation speed (Ausgangs-Drehzahl) n_out, "
+                    "default=%(default)s"
         , type    = float
         , default = 207
-        )
-    cmd.add_argument \
-        ( '-n', '--numerator'
-        , type    = float
-        , default = 3510
         )
     cmd.add_argument \
         ( '--plot-zone-factor'
@@ -1757,6 +1762,12 @@ if __name__ == '__main__' :
     cmd.add_argument \
         ( '--plot-hardness'
         , action  = 'store_true'
+        )
+    cmd.add_argument \
+        ( '-P', '--power'
+        , type    = float
+        , help    = "Power, default=%(default)s"
+        , default = 50e3
         )
     cmd.add_argument \
         ( '-p', '--pop-size'
@@ -1768,6 +1779,11 @@ if __name__ == '__main__' :
         ( '-r', '--random-seed'
         , type    = int
         , default = 42
+        )
+    cmd.add_argument \
+        ( '-u', '--max-tooth'
+        , type    = int
+        , default = 200
         )
     cmd.add_argument \
         ( '-v', '--verbose'

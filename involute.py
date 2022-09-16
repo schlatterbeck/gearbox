@@ -28,15 +28,19 @@ class Inverse_Involute (autosuper) :
     max_degree = 45.0
 
     def __init__ (self) :
-        self.err_range = np.arange (0, self.max_degree, .0013)
+        self.err_range = np.arange (0, self.max_degree, .021)
     # end def __init__
 
-    def plot_error (self, reference, absolute = False) :
+    def plot_error (self, reference = None, absolute = False) :
         y = []
         for a in self.err_range :
             b = a / 180 * np.pi
             invol = np.tan (b) - b
-            ref = reference (invol)
+            ref = b
+            refname = 'Involute'
+            if reference:
+                ref = reference (invol)
+                refname = reference.name
             dif = self (invol) - ref
             if absolute or ref == 0 :
                 y.append (dif)
@@ -45,7 +49,7 @@ class Inverse_Involute (autosuper) :
         fig = plt.figure ()
         ax  = fig.add_subplot (1, 1, 1)
         ax.plot (self.err_range, y)
-        ax.set_title (self.name + ' ref: ' + reference.name)
+        ax.set_title (self.name + ' ref: ' + refname)
         plt.show ()
     # end def plot_error
 
@@ -69,7 +73,7 @@ class Inverse_Involute_Liu (Inverse_Involute) :
 # end class Inverse_Involute_Liu
 
 class Inverse_Involute_Cheng (Inverse_Involute) :
-    name = 'Inverse Involute Liu'
+    name = 'Inverse Involute Cheng'
     def __call__ (self, x) :
         k3 = 3 ** (1/3)
         return \
@@ -160,10 +164,8 @@ if __name__ == '__main__' :
         , action  = 'store_true'
         )
     cmd.add_argument \
-        ( '--error-reference'
-        , help    = "Error reference can be one of 'liu' or 'cheng', "
-                    "default=%(default)s"
-        , default = "liu"
+        ( '--reference', '--error-reference'
+        , help    = "Error reference can be empty or 'liu' or 'cheng'"
         )
     cmd.add_argument \
         ( '--test-implementation'
@@ -173,5 +175,7 @@ if __name__ == '__main__' :
         )
     args = cmd.parse_args ()
     under_test = globals () ['inv_involute_%s' % args.test_implementation]
-    reference  = globals () ['inv_involute_%s' % args.error_reference]
+    reference = None
+    if args.reference:
+        reference  = globals () ['inv_involute_%s' % args.reference]
     under_test.plot_error (reference, absolute = args.absolute_error)

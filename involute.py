@@ -58,7 +58,8 @@ class Inverse_Involute (autosuper) :
 class Inverse_Involute_Liu (Inverse_Involute) :
     """ Corrected version by Liu cited by Rosado et. al.
         The version in Rosado et.al. has an error where they use
-        x ** (5/3 instead of x ** (8 / 3) in the denominator
+        x ** (5/3) instead of x ** (8/5) in the denominator, so the atan
+        expression is really the same in numerator and denominator.
     """
     name = 'Inverse Involute Liu'
     def __call__ (self, x) :

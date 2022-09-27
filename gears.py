@@ -1691,7 +1691,7 @@ class Gear_Optimizer (pga.PGA, autosuper) :
         ret  = [ self.err (*z), gb.cost, gb.l_Gi
                , gb.gears [0].normalmodul, gb.gears [1].normalmodul
                ]
-        ret.extend ([self.err (*z) - 1.5, gc - 2])
+        ret.extend ([self.err (*z) - self.args.max_err, gc - 2])
         for n in self.constraints :
             m = getattr (gb, n)
             ret.append (m ())
@@ -1747,6 +1747,11 @@ if __name__ == '__main__' :
         ( '-l', '--min-tooth'
         , type    = int
         , default = 17
+        )
+    cmd.add_argument \
+        ( '-m', '--max-err'
+        , type    = float
+        , default = 1.5
         )
     cmd.add_argument \
         ( '-o', '--output-rotation-speed'
